@@ -1,65 +1,334 @@
-import Image from "next/image";
+"use client";
+
+import { useMemo, useState } from "react";
+import { motion } from "framer-motion";
+import { ScoreRing } from "@/src/components/ScoreRing";
+import { KeywordBadge } from "@/src/components/KeywordBadge";
+import { Tabs } from "@/src/components/Tabs";
+import { ModificationCard } from "@/src/components/ModificationCard";
+import type { AnalyzeResponse } from "@/src/lib/schemas";
+
+type AcceptedMap = Record<string, boolean>;
 
 export default function Home() {
+  const [resumeText, setResumeText] = useState("");
+  const [jobDescription, setJobDescription] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState("modifications");
+
+  const [result, setResult] = useState<AnalyzeResponse | null>(null);
+
+  // accepted/rejected per suggestion id
+  const [accepted, setAccepted] = useState<AcceptedMap>({});
+
+  // derived updated resume (apply accepted modifications as simple replacements)
+  const updatedResume = useMemo(() => {
+    if (!result) return resumeText;
+    let text = resumeText;
+
+    for (const mod of result.suggestions.modifications) {
+      if (accepted[mod.id]) {
+        // naive replacement: first occurrence
+        const idx = text.indexOf(mod.originalText);
+        if (idx >= 0) {
+          text =
+            text.slice(0, idx) +
+            mod.suggestedText +
+            text.slice(idx + mod.originalText.length);
+        }
+      }
+    }
+    return text;
+  }, [accepted, result, resumeText]);
+
+  async function handleUpload(file: File) {
+    const fd = new FormData();
+    fd.append("file", file);
+
+    const res = await fetch("/api/upload", { method: "POST", body: fd });
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data?.error ?? "Upload failed");
+      return;
+    }
+
+    setResumeText(data.text || "");
+  }
+
+  async function analyze() {
+    setLoading(true);
+    setResult(null);
+    setAccepted({});
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ resumeText, jobDescription }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Analyze failed");
+      setResult(data);
+      setActiveTab("modifications");
+    } catch (e: unknown) {
+      if (e instanceof Error) {
+        alert(e.message ?? "Analyze failed");
+      } else {
+        alert(String(e) || "Analyze failed");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // placeholder: in MVP, “regen one suggestion” just re-runs analyze
+  // next step we’ll implement /api/regenerate-suggestion with stable IDs
+  async function regenOneSuggestion() {
+    await analyze();
+  }
+
+  const tabs = [
+    {
+      id: "modifications",
+      label: "Modifications",
+      content: (
+        <div className="space-y-3">
+          {!result ? (
+            <div className="text-zinc-400 text-sm">
+              Run analysis to see AI-powered modifications.
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-3">
+                <button
+                  className="px-3 py-2 rounded-lg bg-indigo-600/20 border border-indigo-600/30 text-indigo-200 text-sm hover:bg-indigo-600/30"
+                  onClick={() => setResumeText(updatedResume)}
+                  disabled={result.suggestions.modifications.length === 0}
+                >
+                  Regenerate My Resume (apply accepted)
+                </button>
+                <div className="text-xs text-zinc-500">
+                  Applies accepted changes into your resume text area.
+                </div>
+              </div>
+
+              {result.suggestions.modifications.map((m) => (
+                <ModificationCard
+                  key={m.id}
+                  originalText={m.originalText}
+                  suggestedText={m.suggestedText}
+                  reason={m.reason}
+                  onAcceptChange={(isAccepted) =>
+                    setAccepted((prev) => ({ ...prev, [m.id]: isAccepted }))
+                  }
+                  onRegen={regenOneSuggestion}
+                />
+              ))}
+            </>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: "restructuring",
+      label: "Restructuring",
+      content: (
+        <div className="space-y-2">
+          {!result ? (
+            <div className="text-zinc-400 text-sm">
+              Run analysis to see restructuring recommendations.
+            </div>
+          ) : (
+            result.suggestions.restructuring.map((r) => (
+              <div
+                key={r.id}
+                className="border border-zinc-800 rounded-xl p-4 bg-zinc-950/40 flex gap-3"
+              >
+                <span
+                  className={[
+                    "px-2 py-1 rounded-full text-xs border h-fit",
+                    r.badge === "add" &&
+                      "bg-emerald-500/15 border-emerald-500/30 text-emerald-200",
+                    r.badge === "remove" &&
+                      "bg-rose-500/15 border-rose-500/30 text-rose-200",
+                    r.badge === "reorder" &&
+                      "bg-amber-500/15 border-amber-500/30 text-amber-200",
+                    r.badge === "improve" &&
+                      "bg-sky-500/15 border-sky-500/30 text-sky-200",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  {r.badge.toUpperCase()}
+                </span>
+
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm text-white">{r.title}</div>
+                    <span
+                      className={[
+                        "text-xs px-2 py-0.5 rounded-full border",
+                        r.severity === "high" &&
+                          "border-rose-500/30 text-rose-200 bg-rose-500/10",
+                        r.severity === "medium" &&
+                          "border-amber-500/30 text-amber-200 bg-amber-500/10",
+                        r.severity === "low" &&
+                          "border-emerald-500/30 text-emerald-200 bg-emerald-500/10",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
+                      {r.severity}
+                    </span>
+                  </div>
+                  <div className="text-sm text-zinc-300 mt-1">{r.details}</div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ),
+    },
+    {
+      id: "updated",
+      label: "Updated Resume",
+      content: (
+        <div className="border border-zinc-800 rounded-xl p-4 bg-zinc-950/40">
+          <div className="text-xs text-zinc-400 mb-2">
+            Preview after applying accepted modifications
+          </div>
+          <pre className="text-sm text-zinc-200 whitespace-pre-wrap">
+            {updatedResume}
+          </pre>
+        </div>
+      ),
+    },
+  ];
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <div className="min-h-screen bg-zinc-950 text-white">
+      <div className="max-w-6xl mx-auto p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center justify-between mb-6"
+        >
+          <div>
+            <h1 className="text-2xl font-semibold">Resume ATS Analyzer</h1>
+            <p className="text-sm text-zinc-400">
+              Upload/paste a resume, add a job description, and get ATS scoring
+              + AI improvements.
+            </p>
+          </div>
+
+          <button
+            className="px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-200 hover:bg-zinc-800"
+            onClick={() => {
+              setResumeText("");
+              setJobDescription("");
+              setResult(null);
+              setAccepted({});
+            }}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+            Reset
+          </button>
+        </motion.div>
+
+        <div className="grid lg:grid-cols-2 gap-4">
+          {/* Resume */}
+          <div className="border border-zinc-800 rounded-2xl p-4 bg-zinc-950/40">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm text-zinc-200">Resume</div>
+              <label className="text-sm cursor-pointer px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 hover:bg-zinc-800">
+                Upload PDF/DOCX
+                <input
+                  type="file"
+                  className="hidden"
+                  accept=".pdf,.docx"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleUpload(f);
+                  }}
+                />
+              </label>
+            </div>
+            <textarea
+              value={resumeText}
+              onChange={(e) => setResumeText(e.target.value)}
+              placeholder="Paste resume text here..."
+              className="w-full min-h-[280px] bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-sm text-zinc-100 outline-none focus:ring-2 focus:ring-indigo-600/30"
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+          </div>
+
+          {/* JD */}
+          <div className="border border-zinc-800 rounded-2xl p-4 bg-zinc-950/40">
+            <div className="text-sm text-zinc-200 mb-3">Job Description</div>
+            <textarea
+              value={jobDescription}
+              onChange={(e) => setJobDescription(e.target.value)}
+              placeholder="Paste job description here..."
+              className="w-full min-h-[280px] bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-sm text-zinc-100 outline-none focus:ring-2 focus:ring-indigo-600/30"
+            />
+          </div>
         </div>
-      </main>
+
+        <div className="mt-4 flex gap-3 items-center">
+          <button
+            onClick={analyze}
+            disabled={loading || !resumeText.trim() || !jobDescription.trim()}
+            className="px-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:hover:bg-indigo-600 transition"
+          >
+            {loading ? "Analyzing..." : "Analyze Resume"}
+          </button>
+
+          <div className="text-xs text-zinc-500">
+            Tip: For best results, paste the full JD (responsibilities +
+            requirements).
+          </div>
+        </div>
+
+        {/* Results */}
+        {result && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-6 border border-zinc-800 rounded-2xl p-4 bg-zinc-950/40"
+          >
+            <div className="flex flex-col lg:flex-row lg:items-center gap-6">
+              <div className="flex gap-6">
+                <ScoreRing value={result.matchPercentage} label="Match" />
+                <ScoreRing value={result.atsScore} label="ATS Score" />
+              </div>
+
+              <div className="flex-1">
+                <div className="text-sm text-zinc-200 mb-2">Keywords</div>
+
+                <div className="mb-3">
+                  <div className="text-xs text-zinc-400 mb-2">Present</div>
+                  <div className="flex flex-wrap gap-2">
+                    {result.presentKeywords.slice(0, 30).map((k) => (
+                      <KeywordBadge key={k} text={k} variant="present" />
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-xs text-zinc-400 mb-2">Missing</div>
+                  <div className="flex flex-wrap gap-2">
+                    {result.missingKeywords.slice(0, 30).map((k) => (
+                      <KeywordBadge key={k} text={k} variant="missing" />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <Tabs value={activeTab} onChange={setActiveTab} tabs={tabs} />
+            </div>
+          </motion.div>
+        )}
+      </div>
     </div>
   );
 }
