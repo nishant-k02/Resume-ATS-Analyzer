@@ -1,7 +1,6 @@
-import { getAnthropicClient, getModel } from "./anthropic";
+import { getAnthropicClient, getModelCandidates } from "./anthropic";
 import { ClaudeSuggestionsSchema, type ClaudeSuggestions } from "./schemas";
 
-// IMPORTANT: we force Claude to output JSON only.
 function buildPrompt(resumeText: string, jobDescription: string) {
   return `
 You are an ATS resume improvement assistant.
@@ -37,7 +36,7 @@ Rules:
 - Provide 6–12 modifications max.
 - Each modification should be a direct text replacement suggestion (original -> suggested).
 - Reasons must be specific and ATS/job-targeted.
-- Restructuring suggestions are informational (no rewriting entire resume).
+- Restructuring suggestions are informational only.
 - Do NOT include markdown, code blocks, or extra commentary. JSON ONLY.
 
 Resume:
@@ -48,15 +47,40 @@ Job Description:
 `.trim();
 }
 
-// Minimal block types we need (avoids `any`)
-type AnthropicTextBlock = { type: "text"; text: string };
-type AnthropicNonTextBlock = { type: string }; // e.g. tool_use, thinking, etc.
-type AnthropicContentBlock = AnthropicTextBlock | AnthropicNonTextBlock;
+type ClaudeContentBlock = {
+  type?: string;
+  text?: string;
+};
 
-function isTextBlock(
-  block: AnthropicContentBlock
-): block is AnthropicTextBlock {
-  return block.type === "text";
+interface ClaudeResponse {
+  content?: ClaudeContentBlock[] | null;
+  [key: string]: unknown;
+}
+
+function extractTextBlocks(msg: unknown) {
+  const content = (() => {
+    if (!msg || typeof msg !== "object") return [];
+    const c = (msg as ClaudeResponse).content;
+    return c ?? [];
+  })() as ClaudeContentBlock[];
+
+  return content
+    .filter((b): b is ClaudeContentBlock => b?.type === "text")
+    .map((b) => b.text ?? "")
+    .join("\n")
+    .trim();
+}
+
+function parseJsonLoose(text: string) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start >= 0 && end > start)
+      return JSON.parse(text.slice(start, end + 1));
+    throw new Error("Claude returned non-JSON output");
+  }
 }
 
 export async function generateSuggestions(
@@ -64,44 +88,43 @@ export async function generateSuggestions(
   jobDescription: string
 ): Promise<ClaudeSuggestions> {
   const anthropic = getAnthropicClient();
-  const model = getModel();
+  const models = getModelCandidates();
 
-  const msg = await anthropic.messages.create({
-    model,
-    max_tokens: 1400,
-    temperature: 0.4,
-    messages: [
-      {
-        role: "user",
-        content: buildPrompt(resumeText, jobDescription),
-      },
-    ],
-  });
+  let lastErr: unknown = null;
 
-  // Anthropic SDK returns content blocks; extract only text blocks.
-  const content = msg.content as AnthropicContentBlock[];
+  for (const model of models) {
+    try {
+      const msg = await anthropic.messages.create({
+        model,
+        max_tokens: 1400,
+        temperature: 0.4,
+        messages: [
+          { role: "user", content: buildPrompt(resumeText, jobDescription) },
+        ],
+      });
 
-  const text = content
-    .filter(isTextBlock)
-    .map((b) => b.text)
-    .join("\n")
-    .trim();
+      const text = extractTextBlocks(msg);
+      const parsed = parseJsonLoose(text);
+      return ClaudeSuggestionsSchema.parse(parsed);
+    } catch (e: unknown) {
+      lastErr = e;
 
-  // parse JSON safely
-  const parsed = parseJsonObject(text);
+      // Normalize unknown error to a shaped object for property access
+      const err = e as { status?: number; message?: string };
 
-  return ClaudeSuggestionsSchema.parse(parsed);
-}
+      // If model not found, try the next one
+      const status = err.status;
+      const message = err.message ?? "";
+      const isModelNotFound = status === 404 && message.includes("model:");
 
-function parseJsonObject(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    const start = text.indexOf("{");
-    const end = text.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-      return JSON.parse(text.slice(start, end + 1));
+      if (isModelNotFound) continue;
+
+      // For non-model errors, stop immediately
+      throw e;
     }
-    throw new Error("Claude returned non-JSON output");
   }
+
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error("No available Claude model worked for this API key.");
 }

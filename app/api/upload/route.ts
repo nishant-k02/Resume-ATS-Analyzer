@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import mammoth from "mammoth";
+import { createRequire } from "module";
 
-export const runtime = "nodejs"; // required since pdf parsing uses Node APIs
+export const runtime = "nodejs";
+
+function isDev() {
+  return process.env.NODE_ENV !== "production";
+}
 
 export async function POST(req: Request) {
   try {
@@ -16,19 +21,21 @@ export async function POST(req: Request) {
     const buf = Buffer.from(await file.arrayBuffer());
 
     if (name.endsWith(".pdf")) {
-      // dynamically import to avoid "no default export" compile error and support different module shapes
-      const pdfModule: unknown = await import("pdf-parse");
-      type PdfParseFn = (data: Buffer) => Promise<{ text?: string }>;
-      const parseFn = ((pdfModule as { default?: PdfParseFn }).default ??
-        (pdfModule as PdfParseFn)) as PdfParseFn;
-      const parsed = await parseFn(buf);
-      const text = (parsed.text ?? "").trim();
+      // ✅ Turbopack-safe: use Node require semantics
+      const require = createRequire(import.meta.url);
+      const pdfParse = require("pdf-parse") as (
+        data: Buffer
+      ) => Promise<{ text?: string }>;
+
+      const parsed = await pdfParse(buf);
+      const text = (parsed?.text ?? "").trim();
+
       return NextResponse.json({ text, fileType: "pdf" });
     }
 
     if (name.endsWith(".docx")) {
       const result = await mammoth.extractRawText({ buffer: buf });
-      const text = (result.value ?? "").trim();
+      const text = (result?.value ?? "").trim();
       return NextResponse.json({ text, fileType: "docx" });
     }
 
@@ -37,8 +44,20 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   } catch (e: unknown) {
+    console.error("UPLOAD_ROUTE_ERROR:", e);
+
+    const errorMessage =
+      e instanceof Error
+        ? e.message
+        : typeof e === "string"
+        ? e
+        : "Upload failed";
+
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Upload failed" },
+      {
+        error: errorMessage,
+        ...(isDev() && e instanceof Error ? { stack: e.stack } : {}),
+      },
       { status: 500 }
     );
   }
