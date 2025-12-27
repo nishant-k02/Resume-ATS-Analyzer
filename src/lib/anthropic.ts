@@ -7,6 +7,14 @@ export function getAnthropicClient() {
   return new Anthropic({ apiKey });
 }
 
-export function getModel() {
-  return process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-latest";
+export function getModelCandidates() {
+  // Try env first, then fallbacks
+  const envModel = process.env.ANTHROPIC_MODEL?.trim();
+  const fallbacks = [
+    "claude-3-5-sonnet-20241022",
+    "claude-3-5-haiku-20241022",
+    "claude-3-sonnet-20240229",
+    "claude-3-haiku-20240307",
+  ];
+  return envModel ? [envModel, ...fallbacks] : fallbacks;
 }
