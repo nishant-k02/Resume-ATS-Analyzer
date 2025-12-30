@@ -1,7 +1,39 @@
 import { NextResponse } from "next/server";
 import mammoth from "mammoth";
+import { createRequire } from "module";
 
-export const runtime = "nodejs"; // required since pdf parsing uses Node APIs
+export const runtime = "nodejs";
+
+function isDev() {
+  return process.env.NODE_ENV !== "production";
+}
+
+type PdfParseResult = { text?: string };
+type PdfParseFn = (data: Buffer) => Promise<PdfParseResult>;
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+function resolvePdfParse(mod: unknown): PdfParseFn {
+  // pdf-parse@1.1.1 usually exports a function (CJS)
+  if (typeof mod === "function") return mod as PdfParseFn;
+
+  // some bundlers wrap it
+  if (isRecord(mod) && typeof mod.default === "function") {
+    return mod.default as PdfParseFn;
+  }
+
+  // last resort: try known named key
+  if (isRecord(mod) && typeof mod.pdfParse === "function") {
+    return mod.pdfParse as PdfParseFn;
+  }
+
+  const keys = isRecord(mod) ? Object.keys(mod) : [];
+  throw new TypeError(
+    `pdf-parse export is not a function. keys=${JSON.stringify(keys)}`
+  );
+}
 
 export async function POST(req: Request) {
   try {
@@ -16,13 +48,14 @@ export async function POST(req: Request) {
     const buf = Buffer.from(await file.arrayBuffer());
 
     if (name.endsWith(".pdf")) {
-      // dynamically import to avoid "no default export" compile error and support different module shapes
-      const pdfModule: unknown = await import("pdf-parse");
-      type PdfParseFn = (data: Buffer) => Promise<{ text?: string }>;
-      const parseFn = ((pdfModule as { default?: PdfParseFn }).default ??
-        (pdfModule as PdfParseFn)) as PdfParseFn;
-      const parsed = await parseFn(buf);
+      // ✅ Force Node resolution (CJS) so we get the actual parser function
+      const require = createRequire(import.meta.url);
+      const mod: unknown = require("pdf-parse/lib/pdf-parse.js");
+      const pdfParse = resolvePdfParse(mod);
+
+      const parsed = await pdfParse(buf);
       const text = (parsed.text ?? "").trim();
+
       return NextResponse.json({ text, fileType: "pdf" });
     }
 
@@ -37,8 +70,20 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   } catch (e: unknown) {
+    console.error("UPLOAD_ROUTE_ERROR:", e);
+
+    const message =
+      e instanceof Error
+        ? e.message
+        : typeof e === "string"
+        ? e
+        : "Upload failed";
+
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Upload failed" },
+      {
+        error: message,
+        ...(isDev() && e instanceof Error ? { stack: e.stack } : {}),
+      },
       { status: 500 }
     );
   }
