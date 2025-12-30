@@ -107,23 +107,50 @@ export function keywordDiff(resumeText: string, jdText: string) {
   return { presentKeywords: present, missingKeywords: missing };
 }
 
-export function scoreFromKeywords(present: string[], missing: string[]) {
+export function scoreFromKeywords(
+  present: string[],
+  missing: string[],
+  resumeRaw?: string
+) {
   const total = present.length + missing.length;
   const coverage = total === 0 ? 0 : present.length / total;
 
-  // Match is basically coverage
   const matchPercentage = Math.round(coverage * 100);
 
-  // ATS score adds small boosts if the resume looks structured
-  // (later we’ll make this much smarter)
   let ats = matchPercentage;
 
-  // slight bonus if resume contains common section headers
-  const bonus = (txt: string, pattern: RegExp) => (pattern.test(txt) ? 3 : 0);
+  if (resumeRaw) {
+    const r = resumeRaw.toLowerCase();
 
-  // NOTE: caller will pass normalized resume; keep regex simple
-  // We'll add these bonuses in API handler with raw resume text.
-  ats = Math.min(100, ats);
+    const has = (re: RegExp) => re.test(r);
+
+    // Section presence bonuses
+    const sectionBonus =
+      (has(/\bexperience\b/) ? 4 : 0) +
+      (has(/\bskills\b/) ? 4 : 0) +
+      (has(/\beducation\b/) ? 3 : 0) +
+      (has(/\bprojects?\b/) ? 2 : 0);
+
+    // Impact metrics bonus (numbers, %, $, etc.)
+    const metricsBonus = has(/(\b\d+%|\$\d+|\b\d+\b)/) ? 4 : 0;
+
+    // Action verbs bonus (rough signal)
+    const actionBonus = has(
+      /\b(led|built|implemented|designed|optimized|delivered|improved|launched)\b/
+    )
+      ? 3
+      : 0;
+
+    // Bullet usage penalty if almost no bullet-like lines
+    const bulletLines = resumeRaw
+      .split("\n")
+      .filter((l) => /^\s*[-•*]\s+/.test(l)).length;
+    const bulletPenalty = bulletLines < 3 ? -3 : 0;
+
+    ats += sectionBonus + metricsBonus + actionBonus + bulletPenalty;
+  }
+
+  ats = Math.max(0, Math.min(100, Math.round(ats)));
 
   return { matchPercentage, atsScore: ats };
 }

@@ -83,8 +83,55 @@ export default function Home() {
 
   // placeholder: in MVP, “regen one suggestion” just re-runs analyze
   // next step we’ll implement /api/regenerate-suggestion with stable IDs
-  async function regenOneSuggestion() {
-    await analyze();
+  async function regenOneSuggestion(
+    suggestionId: string,
+    kind: "modification" | "restructuring"
+  ) {
+    if (!result) return;
+
+    try {
+      const res = await fetch("/api/regenerate-suggestion", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          resumeText,
+          jobDescription,
+          suggestionId,
+          kind,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Failed to regenerate");
+
+      setResult((prev) => {
+        if (!prev) return prev;
+
+        if (kind === "modification") {
+          const mods = prev.suggestions.modifications.map((m) =>
+            m.id === suggestionId ? data.suggestion : m
+          );
+          return {
+            ...prev,
+            suggestions: { ...prev.suggestions, modifications: mods },
+          };
+        } else {
+          const rs = prev.suggestions.restructuring.map((r) =>
+            r.id === suggestionId ? data.suggestion : r
+          );
+          return {
+            ...prev,
+            suggestions: { ...prev.suggestions, restructuring: rs },
+          };
+        }
+      });
+    } catch (e: unknown) {
+      if (e instanceof Error) {
+        alert(e.message ?? "Failed to regenerate");
+      } else {
+        alert(String(e) || "Failed to regenerate");
+      }
+    }
   }
 
   const tabs = [
@@ -121,7 +168,7 @@ export default function Home() {
                   onAcceptChange={(isAccepted) =>
                     setAccepted((prev) => ({ ...prev, [m.id]: isAccepted }))
                   }
-                  onRegen={regenOneSuggestion}
+                  onRegen={() => regenOneSuggestion(m.id, "modification")}
                 />
               ))}
             </>

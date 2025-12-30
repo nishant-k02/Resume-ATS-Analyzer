@@ -34,10 +34,10 @@ Return ONLY valid JSON with this exact shape:
 
 Rules:
 - Provide 6–12 modifications max.
-- Each modification should be a direct text replacement suggestion (original -> suggested).
-- Reasons must be specific and ATS/job-targeted.
-- Restructuring suggestions are informational only.
-- Do NOT include markdown, code blocks, or extra commentary. JSON ONLY.
+- Each modification must be a direct text replacement suggestion (original -> suggested).
+- Reasons must be ATS/job-targeted and specific.
+- Restructuring is informational only.
+- Do NOT include markdown or extra text. JSON ONLY.
 
 Resume:
 """${resumeText}"""
@@ -47,31 +47,18 @@ Job Description:
 `.trim();
 }
 
-type ClaudeContentBlock = {
-  type?: string;
-  text?: string;
-};
-
-interface ClaudeResponse {
-  content?: ClaudeContentBlock[] | null;
-  [key: string]: unknown;
-}
-
-function extractTextBlocks(msg: unknown) {
-  const content = (() => {
-    if (!msg || typeof msg !== "object") return [];
-    const c = (msg as ClaudeResponse).content;
-    return c ?? [];
-  })() as ClaudeContentBlock[];
-
-  return content
-    .filter((b): b is ClaudeContentBlock => b?.type === "text")
+function extractText(msg: unknown): string {
+  // Anthropic SDK returns content blocks
+  const m = msg as { content?: Array<{ type: string; text?: string }> };
+  const blocks = m.content ?? [];
+  return blocks
+    .filter((b) => b.type === "text")
     .map((b) => b.text ?? "")
     .join("\n")
     .trim();
 }
 
-function parseJsonLoose(text: string) {
+function parseJsonLoose(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {
@@ -99,27 +86,24 @@ export async function generateSuggestions(
         max_tokens: 1400,
         temperature: 0.4,
         messages: [
-          { role: "user", content: buildPrompt(resumeText, jobDescription) },
+          {
+            role: "user",
+            content: buildPrompt(resumeText, jobDescription),
+          },
         ],
       });
 
-      const text = extractTextBlocks(msg);
+      const text = extractText(msg);
       const parsed = parseJsonLoose(text);
       return ClaudeSuggestionsSchema.parse(parsed);
     } catch (e: unknown) {
       lastErr = e;
 
-      // Normalize unknown error to a shaped object for property access
-      const err = e as { status?: number; message?: string };
-
-      // If model not found, try the next one
-      const status = err.status;
-      const message = err.message ?? "";
-      const isModelNotFound = status === 404 && message.includes("model:");
-
-      if (isModelNotFound) continue;
-
-      // For non-model errors, stop immediately
+      // If model not found, try next
+      const maybe = e as { status?: number; message?: string };
+      if (maybe.status === 404 && (maybe.message ?? "").includes("model:")) {
+        continue;
+      }
       throw e;
     }
   }
