@@ -10,10 +10,23 @@ function isDev() {
   return process.env.NODE_ENV !== "production";
 }
 
+// simple guard (characters); we’ll do token estimation later
+const MAX_CHARS = 60_000;
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { resumeText, jobDescription } = AnalyzeRequestSchema.parse(body);
+
+    if (resumeText.length + jobDescription.length > MAX_CHARS) {
+      return NextResponse.json(
+        {
+          error:
+            "Input too large. Please shorten resume/JD (or remove extra pages) and try again.",
+        },
+        { status: 413 }
+      );
+    }
 
     const { presentKeywords, missingKeywords } = keywordDiff(
       resumeText,
@@ -22,7 +35,8 @@ export async function POST(req: Request) {
 
     const { matchPercentage, atsScore } = scoreFromKeywords(
       presentKeywords,
-      missingKeywords
+      missingKeywords,
+      resumeText
     );
 
     const suggestions = await generateSuggestions(resumeText, jobDescription);
@@ -37,9 +51,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json(response);
   } catch (e: unknown) {
-    console.error("ANALYZE_ROUTE_ERROR:", e); // ✅ real root cause in terminal
+    console.error("ANALYZE_ROUTE_ERROR:", e);
 
-    // Validation issues → 400
     if (e instanceof z.ZodError) {
       return NextResponse.json(
         { error: "Invalid request/response shape", details: e.issues },
@@ -47,14 +60,17 @@ export async function POST(req: Request) {
       );
     }
 
-    // Everything else is server/Claude/env problems → 500
-    const message = e instanceof Error ? e.message : "Analyze failed";
-    const stack = e instanceof Error ? e.stack : undefined;
+    const msg =
+      e instanceof Error
+        ? e.message
+        : typeof e === "string"
+        ? e
+        : "Analyze failed";
 
     return NextResponse.json(
       {
-        error: message,
-        ...(isDev() && stack ? { stack } : {}),
+        error: msg,
+        ...(isDev() && e instanceof Error ? { stack: e.stack } : {}),
       },
       { status: 500 }
     );
