@@ -154,3 +154,39 @@ export function scoreFromKeywords(
 
   return { matchPercentage, atsScore: ats };
 }
+
+export function computeAtsScoreFromBreakdown(
+  breakdownWeightedMatch: number,
+  resumeRaw: string
+) {
+  let score = 0.7 * breakdownWeightedMatch;
+
+  const r = resumeRaw.toLowerCase();
+
+  const has = (re: RegExp) => re.test(r);
+
+  // Section completeness (max 10)
+  let section = 0;
+  section += has(/\bexperience\b/) ? 3 : 0;
+  section += has(/\bskills\b/) ? 3 : 0;
+  section += has(/\beducation\b/) ? 2 : 0;
+  section += has(/\bprojects?\b/) ? 2 : 0;
+
+  // Metrics / impact (max 10)
+  const hasMetrics = /(\b\d+%|\$\d+|\b\d+\b)/.test(resumeRaw);
+  const metrics = hasMetrics ? 10 : 3;
+
+  // Bullet structure (max 10)
+  const bulletLines = resumeRaw
+    .split("\n")
+    .filter((l) => /^\s*[-•*]\s+/.test(l)).length;
+  const bullets = bulletLines >= 6 ? 10 : bulletLines >= 3 ? 7 : 4;
+
+  // Total heuristics contribution out of 30
+  const heuristics = section + metrics * 0.5 + bullets * 0.5;
+
+  score += heuristics;
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  return score;
+}
