@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AnalyzeRequestSchema, AnalyzeResponseSchema } from "@/src/lib/schemas";
-import { keywordDiff, scoreFromKeywords } from "@/src/lib/text";
+import { keywordDiff } from "@/src/lib/text";
 import { generateSuggestions } from "@/src/lib/claudeSuggestions";
 import { getGroundedMatchBreakdown } from "@/src/lib/claudeMatch";
 import { computeAtsScoreFromBreakdown } from "@/src/lib/text";
