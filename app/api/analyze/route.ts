@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AnalyzeRequestSchema, AnalyzeResponseSchema } from "@/src/lib/schemas";
-import { keywordDiff, scoreFromKeywords } from "@/src/lib/text";
+import { keywordDiff } from "@/src/lib/text";
 import { generateSuggestions } from "@/src/lib/claudeSuggestions";
+import { getGroundedMatchBreakdown } from "@/src/lib/claudeMatch";
+import { computeAtsScoreFromBreakdown } from "@/src/lib/text";
 
 export const runtime = "nodejs";
 
@@ -28,17 +30,28 @@ export async function POST(req: Request) {
       );
     }
 
+    // 1) Deterministic keyword diff (still useful for badges)
     const { presentKeywords, missingKeywords } = keywordDiff(
       resumeText,
       jobDescription
     );
 
-    const { matchPercentage, atsScore } = scoreFromKeywords(
-      presentKeywords,
-      missingKeywords,
+    // 2) LLM-grounded requirement match (more accurate)
+    const breakdown = await getGroundedMatchBreakdown({
+      resumeText,
+      jobDescription,
+    });
+
+    // 3) Final match percentage from grounded score
+    const matchPercentage = Math.round(breakdown.weightedMatch);
+
+    // 4) ATS score = weighted match + resume quality heuristics
+    const atsScore = computeAtsScoreFromBreakdown(
+      breakdown.weightedMatch,
       resumeText
     );
 
+    // 5) Suggestions (keep your existing)
     const suggestions = await generateSuggestions(resumeText, jobDescription);
 
     const response = AnalyzeResponseSchema.parse({
@@ -47,6 +60,7 @@ export async function POST(req: Request) {
       presentKeywords,
       missingKeywords,
       suggestions,
+      breakdown,
     });
 
     return NextResponse.json(response);

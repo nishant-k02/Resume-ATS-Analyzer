@@ -5,9 +5,13 @@ function buildPrompt(resumeText: string, jobDescription: string) {
   return `
 You are an ATS resume improvement assistant.
 
-Given:
-1) Resume text
-2) Job description
+You MUST be strictly grounded in the provided Resume text.
+Do NOT invent experience, tools, certifications, employers, titles, metrics, or projects.
+
+Goal:
+- Improve the resume's alignment to the Job Description
+- Keep claims truthful and consistent with the resume
+- Prefer rewriting existing bullets over adding new claims
 
 Return ONLY valid JSON with this exact shape:
 
@@ -15,7 +19,7 @@ Return ONLY valid JSON with this exact shape:
   "modifications": [
     {
       "id": "mod_1",
-      "originalText": "string",
+      "originalText": "string (must be a verbatim substring of the resume)",
       "suggestedText": "string",
       "reason": "string",
       "sectionHint": "optional string"
@@ -34,10 +38,14 @@ Return ONLY valid JSON with this exact shape:
 
 Rules:
 - Provide 6–12 modifications max.
-- Each modification must be a direct text replacement suggestion (original -> suggested).
-- Reasons must be ATS/job-targeted and specific.
-- Restructuring is informational only.
-- Do NOT include markdown or extra text. JSON ONLY.
+- Each modification must be a direct replacement:
+  - originalText MUST appear verbatim in the resume (substring match).
+  - suggestedText must be realistic and ATS-friendly.
+- Reasons must cite WHICH JD requirement it helps (e.g., 'Matches requirement: Docker/AWS').
+- If you want to add a new skill/tech that is not explicitly in the resume, phrase it conditionally:
+  - "If you have used X, add it to Skills."
+- Restructuring is informational only (no full rewrite).
+- JSON ONLY. No markdown. No extra text.
 
 Resume:
 """${resumeText}"""

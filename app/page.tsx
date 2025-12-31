@@ -10,6 +10,10 @@ import type { AnalyzeResponse } from "@/src/lib/schemas";
 
 type AcceptedMap = Record<string, boolean>;
 
+function clamp(n: number) {
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
 export default function Home() {
   const [resumeText, setResumeText] = useState("");
   const [jobDescription, setJobDescription] = useState("");
@@ -236,6 +240,180 @@ export default function Home() {
         </div>
       ),
     },
+
+    {
+      id: "breakdown",
+      label: "Breakdown",
+      content: (
+        <div className="space-y-4">
+          {!result ? (
+            <div className="text-zinc-400 text-sm">
+              Run analysis to see requirement-level breakdown.
+            </div>
+          ) : (
+            <>
+              {/* Top summary */}
+              <div className="grid md:grid-cols-3 gap-3">
+                <div className="border border-zinc-800 rounded-xl p-4 bg-zinc-950/40">
+                  <div className="text-xs text-zinc-400 mb-1">
+                    Weighted Match
+                  </div>
+                  <div className="text-2xl font-semibold">
+                    {clamp(result.breakdown.weightedMatch)}%
+                  </div>
+                  <div className="text-xs text-zinc-500 mt-1">
+                    Requirements weighted by importance.
+                  </div>
+                </div>
+
+                <div className="border border-zinc-800 rounded-xl p-4 bg-zinc-950/40">
+                  <div className="text-xs text-zinc-400 mb-1">
+                    Must-have Match
+                  </div>
+                  <div className="text-2xl font-semibold">
+                    {clamp(result.breakdown.mustHaveMatch)}%
+                  </div>
+                  <div className="text-xs text-zinc-500 mt-1">
+                    Core requirements coverage.
+                  </div>
+                </div>
+
+                <div className="border border-zinc-800 rounded-xl p-4 bg-zinc-950/40">
+                  <div className="text-xs text-zinc-400 mb-1">
+                    Nice-to-have Match
+                  </div>
+                  <div className="text-2xl font-semibold">
+                    {clamp(result.breakdown.niceToHaveMatch)}%
+                  </div>
+                  <div className="text-xs text-zinc-500 mt-1">
+                    Helpful extras coverage.
+                  </div>
+                </div>
+              </div>
+
+              {/* Requirements list */}
+              <div className="border border-zinc-800 rounded-2xl p-4 bg-zinc-950/40">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <div className="text-sm text-white">Requirements</div>
+                    <div className="text-xs text-zinc-400">
+                      Matched requirements include evidence from your resume.
+                    </div>
+                  </div>
+                  <div className="text-xs text-zinc-500">
+                    Total: {result.breakdown.requirements.length}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {result.breakdown.requirements.map((req) => {
+                    const matched = result.breakdown.matched.find(
+                      (m) => m.requirementId === req.id
+                    );
+                    const missing = result.breakdown.missing.find(
+                      (m) => m.requirementId === req.id
+                    );
+
+                    const status = matched ? "matched" : "missing";
+
+                    return (
+                      <div
+                        key={req.id}
+                        className="border border-zinc-800 rounded-xl p-4 bg-zinc-950/30"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={[
+                              "px-2 py-1 rounded-full text-xs border",
+                              status === "matched"
+                                ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-200"
+                                : "bg-rose-500/15 border-rose-500/30 text-rose-200",
+                            ].join(" ")}
+                          >
+                            {status === "matched" ? "MATCHED" : "MISSING"}
+                          </span>
+
+                          <span
+                            className={[
+                              "px-2 py-1 rounded-full text-xs border",
+                              req.importance === "must"
+                                ? "bg-amber-500/15 border-amber-500/30 text-amber-200"
+                                : "bg-sky-500/15 border-sky-500/30 text-sky-200",
+                            ].join(" ")}
+                          >
+                            {req.importance === "must"
+                              ? "MUST-HAVE"
+                              : "NICE-TO-HAVE"}
+                          </span>
+
+                          <span className="px-2 py-1 rounded-full text-xs border border-zinc-800 text-zinc-300 bg-zinc-900/40">
+                            {req.category}
+                          </span>
+
+                          <span className="text-sm text-white font-medium">
+                            {req.skill}
+                          </span>
+
+                          <span className="ml-auto text-xs text-zinc-500">
+                            weight: {req.weight.toFixed(2)}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 grid md:grid-cols-2 gap-3">
+                          <div className="border border-zinc-800 rounded-lg p-3">
+                            <div className="text-xs text-zinc-400 mb-1">
+                              Evidence in JD
+                            </div>
+                            <div className="text-sm text-zinc-200 whitespace-pre-wrap">
+                              {req.evidenceInJD}
+                            </div>
+                          </div>
+
+                          <div className="border border-zinc-800 rounded-lg p-3">
+                            <div className="text-xs text-zinc-400 mb-1">
+                              {matched ? "Evidence in Resume" : "Suggestion"}
+                            </div>
+                            {matched ? (
+                              <div className="text-sm text-zinc-200 whitespace-pre-wrap">
+                                {matched.evidenceInResume}
+                              </div>
+                            ) : (
+                              <div className="text-sm text-zinc-200 whitespace-pre-wrap">
+                                {missing?.suggestion ??
+                                  "Consider adding this if it truthfully applies to you."}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {req.aliases?.length ? (
+                          <div className="mt-3">
+                            <div className="text-xs text-zinc-400 mb-2">
+                              Aliases
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {req.aliases.slice(0, 12).map((a) => (
+                                <span
+                                  key={`${req.id}-${a}`}
+                                  className="px-2 py-1 rounded-full text-xs border border-zinc-800 text-zinc-300 bg-zinc-900/40"
+                                >
+                                  {a}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      ),
+    },
+
     {
       id: "updated",
       label: "Updated Resume",
