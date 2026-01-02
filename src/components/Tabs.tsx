@@ -30,7 +30,7 @@ export function Tabs({
         ))}
       </div>
 
-      <div className="min-h-[120px]">
+      <div className="min-h-30">
         {tabs.find((t) => t.id === value)?.content}
       </div>
     </div>
