@@ -9,6 +9,7 @@ import { ModificationCard } from "@/src/components/ModificationCard";
 import type { AnalyzeResponse } from "@/src/lib/schemas";
 
 type AcceptedMap = Record<string, boolean>;
+type Decision = "accepted" | "rejected" | null;
 
 function clamp(n: number) {
   return Math.max(0, Math.min(100, Math.round(n)));
@@ -19,8 +20,11 @@ export default function Home() {
   const [jobDescription, setJobDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("modifications");
+  const [regenLoading, setRegenLoading] = useState<Record<string, boolean>>({});
 
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
+
+  const [decisions, setDecisions] = useState<Record<string, Decision>>({});
 
   // accepted/rejected per suggestion id
   const [accepted, setAccepted] = useState<AcceptedMap>({});
@@ -64,6 +68,8 @@ export default function Home() {
     setLoading(true);
     setResult(null);
     setAccepted({});
+    setDecisions({});
+
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
@@ -73,6 +79,12 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? "Analyze failed");
       setResult(data);
+      setDecisions(() => {
+        const next: Record<string, Decision> = {};
+        for (const m of data.suggestions.modifications) next[m.id] = null;
+        return next;
+      });
+
       setActiveTab("modifications");
     } catch (e: unknown) {
       if (e instanceof Error) {
@@ -92,6 +104,8 @@ export default function Home() {
     kind: "modification" | "restructuring"
   ) {
     if (!result) return;
+
+    setRegenLoading((p) => ({ ...p, [suggestionId]: true }));
 
     try {
       const res = await fetch("/api/regenerate-suggestion", {
@@ -130,11 +144,11 @@ export default function Home() {
         }
       });
     } catch (e: unknown) {
-      if (e instanceof Error) {
-        alert(e.message ?? "Failed to regenerate");
-      } else {
-        alert(String(e) || "Failed to regenerate");
-      }
+      const msg =
+        e instanceof Error ? e.message : typeof e === "string" ? e : "Failed";
+      alert(msg);
+    } finally {
+      setRegenLoading((p) => ({ ...p, [suggestionId]: false }));
     }
   }
 
@@ -169,9 +183,18 @@ export default function Home() {
                   originalText={m.originalText}
                   suggestedText={m.suggestedText}
                   reason={m.reason}
-                  onAcceptChange={(isAccepted) =>
-                    setAccepted((prev) => ({ ...prev, [m.id]: isAccepted }))
-                  }
+                  decision={decisions[m.id] ?? null}
+                  onDecision={(d) => {
+                    // lock decision in parent state
+                    setDecisions((prev) => ({ ...prev, [m.id]: d }));
+
+                    // accepted map is used for updatedResume generation
+                    setAccepted((prev) => ({
+                      ...prev,
+                      [m.id]: d === "accepted",
+                    }));
+                  }}
+                  isRegenerating={!!regenLoading[m.id]}
                   onRegen={() => regenOneSuggestion(m.id, "modification")}
                 />
               ))}
@@ -453,6 +476,8 @@ export default function Home() {
               setJobDescription("");
               setResult(null);
               setAccepted({});
+              setDecisions({});
+              setRegenLoading({});
             }}
           >
             Reset
@@ -481,7 +506,7 @@ export default function Home() {
               value={resumeText}
               onChange={(e) => setResumeText(e.target.value)}
               placeholder="Paste resume text here..."
-              className="w-full min-h-[280px] bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-sm text-zinc-100 outline-none focus:ring-2 focus:ring-indigo-600/30"
+              className="w-full min-h-70 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-sm text-zinc-100 outline-none focus:ring-2 focus:ring-indigo-600/30"
             />
           </div>
 
@@ -492,7 +517,7 @@ export default function Home() {
               value={jobDescription}
               onChange={(e) => setJobDescription(e.target.value)}
               placeholder="Paste job description here..."
-              className="w-full min-h-[280px] bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-sm text-zinc-100 outline-none focus:ring-2 focus:ring-indigo-600/30"
+              className="w-full min-h-70 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-sm text-zinc-100 outline-none focus:ring-2 focus:ring-indigo-600/30"
             />
           </div>
         </div>
