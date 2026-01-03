@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, Github, Sparkles, Mail, ExternalLink } from "lucide-react";
+import { FileText, ExternalLink } from "lucide-react";
 import Link from "next/link";
 
 export function Footer() {
@@ -61,7 +61,6 @@ export function Footer() {
                   href="/#analyzer"
                   className="text-sm text-zinc-400 hover:text-white transition-colors duration-200 flex items-center gap-2 group"
                 >
-                  <Sparkles className="w-3 h-3" />
                   <span>Get Started</span>
                 </Link>
               </li>
@@ -79,7 +78,6 @@ export function Footer() {
                   rel="noopener noreferrer"
                   className="text-sm text-zinc-400 hover:text-white transition-colors duration-200 flex items-center gap-2 group"
                 >
-                  <Github className="w-4 h-4" />
                   <span>GitHub</span>
                   <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                 </a>
