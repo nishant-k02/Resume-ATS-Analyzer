@@ -2,76 +2,43 @@
 
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
+import {
+  FileText,
+  Briefcase,
+  Sparkles,
+  RotateCcw,
+  Upload,
+  CheckCircle2,
+  XCircle,
+  RefreshCw,
+  Lightbulb,
+  Target,
+  TrendingUp,
+  FileCheck,
+  // Edit,
+  BarChart3,
+  Eye,
+  Wand2,
+  ArrowRight,
+  Info,
+  Plus,
+  Minus,
+  ArrowUpDown,
+  Zap,
+} from "lucide-react";
 import { ScoreRing } from "@/src/components/ScoreRing";
 import { KeywordBadge } from "@/src/components/KeywordBadge";
 import { Tabs } from "@/src/components/Tabs";
 import { ModificationCard } from "@/src/components/ModificationCard";
+import { Navbar } from "@/src/components/Navbar";
+import { Footer } from "@/src/components/Footer";
 import type { AnalyzeResponse } from "@/src/lib/schemas";
 
-// type AcceptedMap = Record<string, boolean>;
+type AcceptedMap = Record<string, boolean>;
 type Decision = "accepted" | "rejected" | null;
 
 function clamp(n: number) {
   return Math.max(0, Math.min(100, Math.round(n)));
-}
-
-function escapeRegex(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function normalizePunctuation(s: string) {
-  return s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, "-");
-}
-
-/**
- * Try to replace originalText in resume with suggestedText.
- * Returns { nextText, applied }.
- */
-function applyOne(text: string, originalText: string, suggestedText: string) {
-  // 1) Exact replace-all
-  {
-    const escaped = escapeRegex(originalText);
-    const re = new RegExp(escaped, "g");
-    const next = text.replace(re, suggestedText);
-    if (next !== text) return { nextText: next, applied: true };
-  }
-
-  // 2) Whitespace-insensitive match:
-  // Turn "foo   bar\nbaz" into /foo\s+bar\s+baz/g
-  {
-    const tokens = originalText.trim().split(/\s+/).filter(Boolean);
-    if (tokens.length >= 2) {
-      const pattern = tokens.map(escapeRegex).join("\\s+");
-      const re = new RegExp(pattern, "g");
-      const next = text.replace(re, suggestedText);
-      if (next !== text) return { nextText: next, applied: true };
-    }
-  }
-
-  // 3) Normalize punctuation (quotes/hyphens) + whitespace-insensitive
-  {
-    const normOrig = normalizePunctuation(originalText);
-    const normText = normalizePunctuation(text);
-
-    // We need to apply replacements to original text, not normalized only.
-    // So we re-run patterns on the ORIGINAL text but using a forgiving regex built from normOrig.
-    const tokens = normOrig.trim().split(/\s+/).filter(Boolean);
-    if (tokens.length >= 2) {
-      const pattern = tokens.map(escapeRegex).join("\\s+");
-      const re = new RegExp(pattern, "g");
-      const next = text.replace(re, suggestedText);
-      if (next !== text) return { nextText: next, applied: true };
-    }
-
-    // As a last attempt: exact match on normalized (if text was normalized by extraction)
-    if (normText.includes(normOrig)) {
-      // Replace in normalized world, but apply naive fallback in original:
-      // safest: do nothing unless you want a riskier approach.
-      // We'll just mark as not applied.
-    }
-  }
-
-  return { nextText: text, applied: false };
 }
 
 export default function Home() {
@@ -86,42 +53,27 @@ export default function Home() {
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
 
   // accepted/rejected per suggestion id
-  // const [accepted, setAccepted] = useState<AcceptedMap>({});
+  const [accepted, setAccepted] = useState<AcceptedMap>({});
 
   // derived updated resume (apply accepted modifications as simple replacements)
   const updatedResume = useMemo(() => {
     if (!result) return resumeText;
-
     let text = resumeText;
 
     for (const mod of result.suggestions.modifications) {
-      if (decisions[mod.id] === "accepted") {
-        const out = applyOne(text, mod.originalText, mod.suggestedText);
-        text = out.nextText;
+      if (accepted[mod.id]) {
+        // naive replacement: first occurrence
+        const idx = text.indexOf(mod.originalText);
+        if (idx >= 0) {
+          text =
+            text.slice(0, idx) +
+            mod.suggestedText +
+            text.slice(idx + mod.originalText.length);
+        }
       }
     }
-
     return text;
-  }, [decisions, result, resumeText]);
-
-  const applyReport = useMemo(() => {
-    if (!result) return { applied: 0, failed: 0, failedIds: [] as string[] };
-
-    let text = resumeText;
-    let applied = 0;
-    const failedIds: string[] = [];
-
-    for (const mod of result.suggestions.modifications) {
-      if (decisions[mod.id] === "accepted") {
-        const out = applyOne(text, mod.originalText, mod.suggestedText);
-        text = out.nextText;
-        if (out.applied) applied += 1;
-        else failedIds.push(mod.id);
-      }
-    }
-
-    return { applied, failed: failedIds.length, failedIds };
-  }, [decisions, result, resumeText]);
+  }, [accepted, result, resumeText]);
 
   async function handleUpload(file: File) {
     const fd = new FormData();
@@ -141,7 +93,7 @@ export default function Home() {
   async function analyze() {
     setLoading(true);
     setResult(null);
-    // setAccepted({});
+    setAccepted({});
     setDecisions({});
 
     try {
@@ -230,27 +182,27 @@ export default function Home() {
     {
       id: "modifications",
       label: "Modifications",
+      icon: Wand2,
       content: (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {!result ? (
-            <div className="text-zinc-400 text-sm">
-              Run analysis to see AI-powered modifications.
+            <div className="flex flex-col items-center justify-center py-12 text-zinc-400 text-sm bg-zinc-900/30 rounded-xl border border-zinc-800/50">
+              <Wand2 className="w-8 h-8 text-zinc-600 mb-2" />
+              <span>Run analysis to see AI-powered modifications.</span>
             </div>
           ) : (
             <>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-4 p-4 rounded-xl bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/20">
                 <button
-                  className="px-3 py-2 rounded-lg bg-indigo-600/20 border border-indigo-600/30 text-indigo-200 text-sm hover:bg-indigo-600/30"
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600/30 to-indigo-500/30 border border-indigo-500/40 text-indigo-200 text-sm font-medium hover:from-indigo-600/40 hover:to-indigo-500/40 hover:shadow-lg hover:shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                   onClick={() => setResumeText(updatedResume)}
-                  disabled={
-                    result.suggestions.modifications.length === 0 ||
-                    !Object.values(decisions).some((d) => d === "accepted")
-                  }
+                  disabled={result.suggestions.modifications.length === 0}
                 >
-                  Regenerate My Resume (apply accepted)
+                  <ArrowRight className="w-4 h-4" />
+                  Apply Accepted Changes
                 </button>
-                <div className="text-xs text-zinc-500">
-                  Applies accepted changes into your resume text area.
+                <div className="text-xs text-zinc-400 leading-relaxed">
+                  Applies all accepted modifications into your resume text area.
                 </div>
               </div>
 
@@ -265,11 +217,11 @@ export default function Home() {
                     // lock decision in parent state
                     setDecisions((prev) => ({ ...prev, [m.id]: d }));
 
-                    // // accepted map is used for updatedResume generation
-                    // setAccepted((prev) => ({
-                    //   ...prev,
-                    //   [m.id]: d === "accepted",
-                    // }));
+                    // accepted map is used for updatedResume generation
+                    setAccepted((prev) => ({
+                      ...prev,
+                      [m.id]: d === "accepted",
+                    }));
                   }}
                   isRegenerating={!!regenLoading[m.id]}
                   onRegen={() => regenOneSuggestion(m.id, "modification")}
@@ -283,33 +235,39 @@ export default function Home() {
     {
       id: "restructuring",
       label: "Restructuring",
+      icon: TrendingUp,
       content: (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {!result ? (
-            <div className="text-zinc-400 text-sm">
-              Run analysis to see restructuring recommendations.
+            <div className="flex flex-col items-center justify-center py-12 text-zinc-400 text-sm bg-zinc-900/30 rounded-xl border border-zinc-800/50">
+              <TrendingUp className="w-8 h-8 text-zinc-600 mb-2" />
+              <span>Run analysis to see restructuring recommendations.</span>
             </div>
           ) : (
             result.suggestions.restructuring.map((r) => (
               <div
                 key={r.id}
-                className="border border-zinc-800 rounded-xl p-4 bg-zinc-950/40 flex gap-3"
+                className="group border border-zinc-800/50 rounded-xl p-4 bg-gradient-to-br from-zinc-900/50 to-zinc-950/50 backdrop-blur-sm hover:border-zinc-700/50 hover:shadow-lg transition-all duration-300 flex gap-3"
               >
                 <span
                   className={[
-                    "px-2 py-1 rounded-full text-xs border h-fit",
+                    "flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border h-fit",
                     r.badge === "add" &&
-                      "bg-emerald-500/15 border-emerald-500/30 text-emerald-200",
+                      "bg-gradient-to-r from-emerald-500/20 to-emerald-400/20 border-emerald-500/40 text-emerald-200",
                     r.badge === "remove" &&
-                      "bg-rose-500/15 border-rose-500/30 text-rose-200",
+                      "bg-gradient-to-r from-rose-500/20 to-rose-400/20 border-rose-500/40 text-rose-200",
                     r.badge === "reorder" &&
-                      "bg-amber-500/15 border-amber-500/30 text-amber-200",
+                      "bg-gradient-to-r from-amber-500/20 to-amber-400/20 border-amber-500/40 text-amber-200",
                     r.badge === "improve" &&
-                      "bg-sky-500/15 border-sky-500/30 text-sky-200",
+                      "bg-gradient-to-r from-sky-500/20 to-sky-400/20 border-sky-500/40 text-sky-200",
                   ]
                     .filter(Boolean)
                     .join(" ")}
                 >
+                  {r.badge === "add" && <Plus className="w-3 h-3" />}
+                  {r.badge === "remove" && <Minus className="w-3 h-3" />}
+                  {r.badge === "reorder" && <ArrowUpDown className="w-3 h-3" />}
+                  {r.badge === "improve" && <Zap className="w-3 h-3" />}
                   {r.badge.toUpperCase()}
                 </span>
 
@@ -318,13 +276,13 @@ export default function Home() {
                     <div className="text-sm text-white">{r.title}</div>
                     <span
                       className={[
-                        "text-xs px-2 py-0.5 rounded-full border",
+                        "text-xs px-2.5 py-1 rounded-full border font-medium",
                         r.severity === "high" &&
-                          "border-rose-500/30 text-rose-200 bg-rose-500/10",
+                          "border-rose-500/40 text-rose-200 bg-gradient-to-r from-rose-500/20 to-rose-400/20",
                         r.severity === "medium" &&
-                          "border-amber-500/30 text-amber-200 bg-amber-500/10",
+                          "border-amber-500/40 text-amber-200 bg-gradient-to-r from-amber-500/20 to-amber-400/20",
                         r.severity === "low" &&
-                          "border-emerald-500/30 text-emerald-200 bg-emerald-500/10",
+                          "border-emerald-500/40 text-emerald-200 bg-gradient-to-r from-emerald-500/20 to-emerald-400/20",
                       ]
                         .filter(Boolean)
                         .join(" ")}
@@ -344,68 +302,85 @@ export default function Home() {
     {
       id: "breakdown",
       label: "Breakdown",
+      icon: BarChart3,
       content: (
-        <div className="space-y-4">
+        <div className="space-y-6">
           {!result ? (
-            <div className="text-zinc-400 text-sm">
-              Run analysis to see requirement-level breakdown.
+            <div className="flex flex-col items-center justify-center py-12 text-zinc-400 text-sm bg-zinc-900/30 rounded-xl border border-zinc-800/50">
+              <BarChart3 className="w-8 h-8 text-zinc-600 mb-2" />
+              <span>Run analysis to see requirement-level breakdown.</span>
             </div>
           ) : (
             <>
               {/* Top summary */}
-              <div className="grid md:grid-cols-3 gap-3">
-                <div className="border border-zinc-800 rounded-xl p-4 bg-zinc-950/40">
-                  <div className="text-xs text-zinc-400 mb-1">
-                    Weighted Match
+              <div className="grid md:grid-cols-3 gap-4">
+                <div className="group border border-zinc-800/50 rounded-xl p-5 bg-gradient-to-br from-zinc-900/50 to-zinc-950/50 backdrop-blur-sm hover:border-indigo-500/30 hover:shadow-lg transition-all duration-300">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Target className="w-4 h-4 text-indigo-400" />
+                    <div className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+                      Weighted Match
+                    </div>
                   </div>
-                  <div className="text-2xl font-semibold">
+                  <div className="text-3xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent mb-2">
                     {clamp(result.breakdown.weightedMatch)}%
                   </div>
-                  <div className="text-xs text-zinc-500 mt-1">
+                  <div className="text-xs text-zinc-500 leading-relaxed">
                     Requirements weighted by importance.
                   </div>
                 </div>
 
-                <div className="border border-zinc-800 rounded-xl p-4 bg-zinc-950/40">
-                  <div className="text-xs text-zinc-400 mb-1">
-                    Must-have Match
+                <div className="group border border-zinc-800/50 rounded-xl p-5 bg-gradient-to-br from-zinc-900/50 to-zinc-950/50 backdrop-blur-sm hover:border-emerald-500/30 hover:shadow-lg transition-all duration-300">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <div className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+                      Must-have Match
+                    </div>
                   </div>
-                  <div className="text-2xl font-semibold">
+                  <div className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent mb-2">
                     {clamp(result.breakdown.mustHaveMatch)}%
                   </div>
-                  <div className="text-xs text-zinc-500 mt-1">
+                  <div className="text-xs text-zinc-500 leading-relaxed">
                     Core requirements coverage.
                   </div>
                 </div>
 
-                <div className="border border-zinc-800 rounded-xl p-4 bg-zinc-950/40">
-                  <div className="text-xs text-zinc-400 mb-1">
-                    Nice-to-have Match
+                <div className="group border border-zinc-800/50 rounded-xl p-5 bg-gradient-to-br from-zinc-900/50 to-zinc-950/50 backdrop-blur-sm hover:border-sky-500/30 hover:shadow-lg transition-all duration-300">
+                  <div className="flex items-center gap-2 mb-2">
+                    <TrendingUp className="w-4 h-4 text-sky-400" />
+                    <div className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+                      Nice-to-have Match
+                    </div>
                   </div>
-                  <div className="text-2xl font-semibold">
+                  <div className="text-3xl font-bold bg-gradient-to-r from-sky-400 to-blue-400 bg-clip-text text-transparent mb-2">
                     {clamp(result.breakdown.niceToHaveMatch)}%
                   </div>
-                  <div className="text-xs text-zinc-500 mt-1">
+                  <div className="text-xs text-zinc-500 leading-relaxed">
                     Helpful extras coverage.
                   </div>
                 </div>
               </div>
 
               {/* Requirements list */}
-              <div className="border border-zinc-800 rounded-2xl p-4 bg-zinc-950/40">
-                <div className="flex items-center justify-between mb-3">
+              <div className="border border-zinc-800/50 rounded-2xl p-5 lg:p-6 bg-gradient-to-br from-zinc-900/50 to-zinc-950/50 backdrop-blur-sm shadow-xl">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-5 gap-3">
                   <div>
-                    <div className="text-sm text-white">Requirements</div>
-                    <div className="text-xs text-zinc-400">
+                    <div className="flex items-center gap-2 mb-1">
+                      <FileCheck className="w-4 h-4 text-indigo-400" />
+                      <div className="text-sm font-semibold text-white">
+                        Requirements
+                      </div>
+                    </div>
+                    <div className="text-xs text-zinc-400 leading-relaxed">
                       Matched requirements include evidence from your resume.
                     </div>
                   </div>
-                  <div className="text-xs text-zinc-500">
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-900/60 border border-zinc-800/50 text-xs font-medium text-zinc-300">
+                    <Info className="w-3.5 h-3.5" />
                     Total: {result.breakdown.requirements.length}
                   </div>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {result.breakdown.requirements.map((req) => {
                     const matched = result.breakdown.matched.find(
                       (m) => m.requirementId === req.id
@@ -419,26 +394,36 @@ export default function Home() {
                     return (
                       <div
                         key={req.id}
-                        className="border border-zinc-800 rounded-xl p-4 bg-zinc-950/30"
+                        className="group border border-zinc-800/50 rounded-xl p-5 bg-gradient-to-br from-zinc-900/40 to-zinc-950/40 backdrop-blur-sm hover:border-zinc-700/50 hover:shadow-lg transition-all duration-300"
                       >
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2 mb-4">
                           <span
                             className={[
-                              "px-2 py-1 rounded-full text-xs border",
+                              "flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border",
                               status === "matched"
-                                ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-200"
-                                : "bg-rose-500/15 border-rose-500/30 text-rose-200",
+                                ? "bg-gradient-to-r from-emerald-500/20 to-emerald-400/20 border-emerald-500/40 text-emerald-200"
+                                : "bg-gradient-to-r from-rose-500/20 to-rose-400/20 border-rose-500/40 text-rose-200",
                             ].join(" ")}
                           >
-                            {status === "matched" ? "MATCHED" : "MISSING"}
+                            {status === "matched" ? (
+                              <>
+                                <CheckCircle2 className="w-3 h-3" />
+                                MATCHED
+                              </>
+                            ) : (
+                              <>
+                                <XCircle className="w-3 h-3" />
+                                MISSING
+                              </>
+                            )}
                           </span>
 
                           <span
                             className={[
-                              "px-2 py-1 rounded-full text-xs border",
+                              "px-3 py-1 rounded-full text-xs font-medium border",
                               req.importance === "must"
-                                ? "bg-amber-500/15 border-amber-500/30 text-amber-200"
-                                : "bg-sky-500/15 border-sky-500/30 text-sky-200",
+                                ? "bg-gradient-to-r from-amber-500/20 to-amber-400/20 border-amber-500/40 text-amber-200"
+                                : "bg-gradient-to-r from-sky-500/20 to-sky-400/20 border-sky-500/40 text-sky-200",
                             ].join(" ")}
                           >
                             {req.importance === "must"
@@ -446,39 +431,39 @@ export default function Home() {
                               : "NICE-TO-HAVE"}
                           </span>
 
-                          <span className="px-2 py-1 rounded-full text-xs border border-zinc-800 text-zinc-300 bg-zinc-900/40">
+                          <span className="px-3 py-1 rounded-full text-xs font-medium border border-zinc-800/50 text-zinc-300 bg-zinc-900/60">
                             {req.category}
                           </span>
 
-                          <span className="text-sm text-white font-medium">
+                          <span className="text-sm text-white font-semibold">
                             {req.skill}
                           </span>
 
-                          <span className="ml-auto text-xs text-zinc-500">
+                          <span className="ml-auto px-2.5 py-1 rounded-lg text-xs font-medium text-zinc-400 bg-zinc-900/40 border border-zinc-800/50">
                             weight: {req.weight.toFixed(2)}
                           </span>
                         </div>
 
-                        <div className="mt-3 grid md:grid-cols-2 gap-3">
-                          <div className="border border-zinc-800 rounded-lg p-3">
-                            <div className="text-xs text-zinc-400 mb-1">
+                        <div className="mt-4 grid md:grid-cols-2 gap-4">
+                          <div className="border border-zinc-800/50 rounded-lg p-4 bg-zinc-950/40">
+                            <div className="text-xs font-medium text-zinc-400 mb-2 uppercase tracking-wide">
                               Evidence in JD
                             </div>
-                            <div className="text-sm text-zinc-200 whitespace-pre-wrap">
+                            <div className="text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed">
                               {req.evidenceInJD}
                             </div>
                           </div>
 
-                          <div className="border border-zinc-800 rounded-lg p-3">
-                            <div className="text-xs text-zinc-400 mb-1">
+                          <div className="border border-zinc-800/50 rounded-lg p-4 bg-zinc-950/40">
+                            <div className="text-xs font-medium text-zinc-400 mb-2 uppercase tracking-wide">
                               {matched ? "Evidence in Resume" : "Suggestion"}
                             </div>
                             {matched ? (
-                              <div className="text-sm text-zinc-200 whitespace-pre-wrap">
+                              <div className="text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed">
                                 {matched.evidenceInResume}
                               </div>
                             ) : (
-                              <div className="text-sm text-zinc-200 whitespace-pre-wrap">
+                              <div className="text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed italic">
                                 {missing?.suggestion ??
                                   "Consider adding this if it truthfully applies to you."}
                               </div>
@@ -487,15 +472,15 @@ export default function Home() {
                         </div>
 
                         {req.aliases?.length ? (
-                          <div className="mt-3">
-                            <div className="text-xs text-zinc-400 mb-2">
+                          <div className="mt-4 pt-4 border-t border-zinc-800/50">
+                            <div className="text-xs font-medium text-zinc-400 mb-3 uppercase tracking-wide">
                               Aliases
                             </div>
                             <div className="flex flex-wrap gap-2">
                               {req.aliases.slice(0, 12).map((a) => (
                                 <span
                                   key={`${req.id}-${a}`}
-                                  className="px-2 py-1 rounded-full text-xs border border-zinc-800 text-zinc-300 bg-zinc-900/40"
+                                  className="px-2.5 py-1 rounded-full text-xs font-medium border border-zinc-800/50 text-zinc-300 bg-zinc-900/60"
                                 >
                                   {a}
                                 </span>
@@ -517,28 +502,16 @@ export default function Home() {
     {
       id: "updated",
       label: "Updated Resume",
+      icon: FileCheck,
       content: (
-        <div className="border border-zinc-800 rounded-xl p-4 bg-zinc-950/40">
-          <div className="text-xs text-zinc-400 mb-2">
-            Preview after applying accepted modifications
-          </div>
-          {result && (
-            <div className="text-xs text-zinc-400 mb-3">
-              Applied:{" "}
-              <span className="text-zinc-200">{applyReport.applied}</span>{" "}
-              &nbsp;|&nbsp; Failed to apply:{" "}
-              <span className="text-zinc-200">{applyReport.failed}</span>
-              {applyReport.failed > 0 ? (
-                <div className="mt-2 text-amber-200">
-                  Some accepted changes could not be applied because the exact
-                  text was not found in your resume. (This can happen due to PDF
-                  formatting or edits after analysis.)
-                </div>
-              ) : null}
+        <div className="border border-zinc-800/50 rounded-xl p-5 bg-gradient-to-br from-zinc-900/50 to-zinc-950/50 backdrop-blur-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <Eye className="w-4 h-4 text-indigo-400" />
+            <div className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+              Preview after applying accepted modifications
             </div>
-          )}
-
-          <pre className="text-sm text-zinc-200 whitespace-pre-wrap">
+          </div>
+          <pre className="text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed bg-zinc-950/40 rounded-lg p-4 border border-zinc-800/50 overflow-x-auto">
             {updatedResume}
           </pre>
         </div>
@@ -547,86 +520,139 @@ export default function Home() {
   ];
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white">
-      <div className="max-w-6xl mx-auto p-6">
+    <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 text-white relative overflow-hidden">
+      {/* Navbar */}
+      <Navbar />
+
+      {/* Background gradient effects */}
+      <div className="fixed inset-0 -z-10">
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />
+      </div>
+
+      <div className="max-w-7xl mx-auto p-6 lg:p-8 relative z-10" id="analyzer">
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between mb-6"
+          className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4"
         >
           <div>
-            <h1 className="text-2xl font-semibold">Resume ATS Analyzer</h1>
-            <p className="text-sm text-zinc-400">
-              Upload/paste a resume, add a job description, and get ATS scoring
-              + AI improvements.
+            <h1 className="text-3xl lg:text-4xl font-bold bg-gradient-to-r from-white via-zinc-100 to-zinc-300 bg-clip-text text-transparent mb-2">
+              ResumeLens
+            </h1>
+            <p className="text-sm lg:text-base text-zinc-400 leading-relaxed">
+              Upload or paste your resume, add a job description, and get
+              AI-powered ATS scoring
+              <span className="text-indigo-400">
+                {" "}
+                + intelligent improvements
+              </span>
+              .
             </p>
           </div>
 
           <button
-            className="px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-200 hover:bg-zinc-800"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-zinc-900/60 backdrop-blur-sm border border-zinc-800/50 text-zinc-200 hover:bg-zinc-800/60 hover:border-zinc-700/50 hover:shadow-lg transition-all duration-200 font-medium text-sm"
             onClick={() => {
               setResumeText("");
               setJobDescription("");
               setResult(null);
-              // setAccepted({});
+              setAccepted({});
               setDecisions({});
               setRegenLoading({});
             }}
           >
+            <RotateCcw className="w-4 h-4" />
             Reset
           </button>
         </motion.div>
 
-        <div className="grid lg:grid-cols-2 gap-4">
+        <div className="grid lg:grid-cols-2 gap-6">
           {/* Resume */}
-          <div className="border border-zinc-800 rounded-2xl p-4 bg-zinc-950/40">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-sm text-zinc-200">Resume</div>
-              <label className="text-sm cursor-pointer px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 hover:bg-zinc-800">
-                Upload PDF/DOCX
-                <input
-                  type="file"
-                  className="hidden"
-                  accept=".pdf,.docx"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleUpload(f);
-                  }}
-                />
-              </label>
+          <div className="group relative border border-zinc-800/50 rounded-2xl p-5 bg-gradient-to-br from-zinc-900/60 to-zinc-950/60 backdrop-blur-sm shadow-xl hover:shadow-2xl hover:border-zinc-700/50 transition-all duration-300 flex flex-col">
+            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            <div className="relative flex flex-col flex-1">
+              <div className="flex items-center justify-between mb-4 h-[40px]">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-indigo-400" />
+                  <div className="text-sm font-semibold text-zinc-200">
+                    Resume
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-sm cursor-pointer px-4 py-2 rounded-xl bg-zinc-900/60 border border-zinc-800/50 hover:bg-zinc-800/60 hover:border-zinc-700/50 transition-all duration-200 font-medium whitespace-nowrap">
+                  <Upload className="w-4 h-4" />
+                  Upload PDF/DOCX
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept=".pdf,.docx"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleUpload(f);
+                    }}
+                  />
+                </label>
+              </div>
+              <textarea
+                value={resumeText}
+                onChange={(e) => setResumeText(e.target.value)}
+                placeholder="Paste resume text here..."
+                className="w-full flex-1 min-h-[320px] bg-zinc-950/80 border border-zinc-800/50 rounded-xl p-4 text-sm text-zinc-100 outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all duration-200 resize-none placeholder:text-zinc-500"
+              />
             </div>
-            <textarea
-              value={resumeText}
-              onChange={(e) => setResumeText(e.target.value)}
-              placeholder="Paste resume text here..."
-              className="w-full min-h-70 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-sm text-zinc-100 outline-none focus:ring-2 focus:ring-indigo-600/30"
-            />
           </div>
 
           {/* JD */}
-          <div className="border border-zinc-800 rounded-2xl p-4 bg-zinc-950/40">
-            <div className="text-sm text-zinc-200 mb-3">Job Description</div>
-            <textarea
-              value={jobDescription}
-              onChange={(e) => setJobDescription(e.target.value)}
-              placeholder="Paste job description here..."
-              className="w-full min-h-70 bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-sm text-zinc-100 outline-none focus:ring-2 focus:ring-indigo-600/30"
-            />
+          <div className="group relative border border-zinc-800/50 rounded-2xl p-5 bg-gradient-to-br from-zinc-900/60 to-zinc-950/60 backdrop-blur-sm shadow-xl hover:shadow-2xl hover:border-zinc-700/50 transition-all duration-300 flex flex-col">
+            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-pink-500/5 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            <div className="relative flex flex-col flex-1">
+              <div className="flex items-center justify-between mb-4 h-[40px]">
+                <div className="flex items-center gap-2">
+                  <Briefcase className="w-4 h-4 text-purple-400" />
+                  <div className="text-sm font-semibold text-zinc-200">
+                    Job Description
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-sm px-4 py-2 invisible">
+                  <Upload className="w-4 h-4" />
+                  <span>Upload PDF/DOCX</span>
+                </div>
+              </div>
+              <textarea
+                value={jobDescription}
+                onChange={(e) => setJobDescription(e.target.value)}
+                placeholder="Paste job description here..."
+                className="w-full flex-1 min-h-[320px] bg-zinc-950/80 border border-zinc-800/50 rounded-xl p-4 text-sm text-zinc-100 outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all duration-200 resize-none placeholder:text-zinc-500"
+              />
+            </div>
           </div>
         </div>
 
-        <div className="mt-4 flex gap-3 items-center">
+        <div className="mt-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center">
           <button
             onClick={analyze}
             disabled={loading || !resumeText.trim() || !jobDescription.trim()}
-            className="px-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:hover:bg-indigo-600 transition"
+            className="group relative px-6 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 disabled:hover:from-indigo-600 disabled:hover:to-purple-600 transition-all duration-200 font-semibold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-xl hover:shadow-indigo-500/40 disabled:shadow-none flex items-center gap-2"
           >
-            {loading ? "Analyzing..." : "Analyze Resume"}
+            {loading ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>Analyzing...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4" />
+                <span>Analyze Resume</span>
+              </>
+            )}
           </button>
 
-          <div className="text-xs text-zinc-500">
-            Tip: For best results, paste the full JD (responsibilities +
-            requirements).
+          <div className="flex items-start gap-2 text-xs text-zinc-400 bg-zinc-900/40 border border-zinc-800/50 rounded-lg px-3 py-2 backdrop-blur-sm">
+            <Lightbulb className="w-4 h-4 text-indigo-400 flex-shrink-0 mt-0.5" />
+            <span>
+              Tip: For best results, paste the full JD (responsibilities +
+              requirements).
+            </span>
           </div>
         </div>
 
@@ -635,19 +661,26 @@ export default function Home() {
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mt-6 border border-zinc-800 rounded-2xl p-4 bg-zinc-950/40"
+            className="mt-8 border border-zinc-800/50 rounded-3xl p-6 lg:p-8 bg-gradient-to-br from-zinc-900/60 to-zinc-950/60 backdrop-blur-sm shadow-2xl"
           >
-            <div className="flex flex-col lg:flex-row lg:items-center gap-6">
-              <div className="flex gap-6">
+            <div className="flex flex-col lg:flex-row lg:items-start gap-8 mb-8">
+              <div className="flex gap-8 justify-center lg:justify-start">
                 <ScoreRing value={result.matchPercentage} label="Match" />
                 <ScoreRing value={result.atsScore} label="ATS Score" />
               </div>
 
               <div className="flex-1">
-                <div className="text-sm text-zinc-200 mb-2">Keywords</div>
+                <div className="flex items-center gap-2 mb-4">
+                  <Target className="w-4 h-4 text-indigo-400" />
+                  <div className="text-sm font-semibold text-zinc-200">
+                    Keywords
+                  </div>
+                </div>
 
-                <div className="mb-3">
-                  <div className="text-xs text-zinc-400 mb-2">Present</div>
+                <div className="mb-4">
+                  <div className="text-xs font-medium text-emerald-400/80 mb-3 uppercase tracking-wide">
+                    Present
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     {result.presentKeywords.slice(0, 30).map((k) => (
                       <KeywordBadge key={k} text={k} variant="present" />
@@ -656,7 +689,9 @@ export default function Home() {
                 </div>
 
                 <div>
-                  <div className="text-xs text-zinc-400 mb-2">Missing</div>
+                  <div className="text-xs font-medium text-rose-400/80 mb-3 uppercase tracking-wide">
+                    Missing
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     {result.missingKeywords.slice(0, 30).map((k) => (
                       <KeywordBadge key={k} text={k} variant="missing" />
@@ -666,12 +701,15 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="mt-6">
+            <div className="mt-8 pt-6 border-t border-zinc-800/50">
               <Tabs value={activeTab} onChange={setActiveTab} tabs={tabs} />
             </div>
           </motion.div>
         )}
       </div>
+      
+      {/* Footer */}
+      <Footer />
     </div>
   );
 }
