@@ -26,14 +26,17 @@ export function Footer() {
               </div>
             </Link>
             <p className="text-sm text-zinc-400 leading-relaxed max-w-md">
-              Optimize your resume with AI-powered ATS analysis and intelligent suggestions. 
-              Get detailed insights to improve your job application success rate.
+              Optimize your resume with AI-powered ATS analysis and intelligent
+              suggestions. Get detailed insights to improve your job application
+              success rate.
             </p>
           </div>
 
           {/* Quick Links */}
           <div>
-            <h3 className="text-sm font-semibold text-white mb-4">Quick Links</h3>
+            <h3 className="text-sm font-semibold text-white mb-4">
+              Quick Links
+            </h3>
             <ul className="space-y-3">
               <li>
                 <Link
@@ -54,13 +57,13 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <a
+                <Link
                   href="/#analyzer"
                   className="text-sm text-zinc-400 hover:text-white transition-colors duration-200 flex items-center gap-2 group"
                 >
                   <Sparkles className="w-3 h-3" />
                   <span>Get Started</span>
-                </a>
+                </Link>
               </li>
             </ul>
           </div>
@@ -123,4 +126,3 @@ export function Footer() {
     </footer>
   );
 }
-
