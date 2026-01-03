@@ -1,4 +1,5 @@
 const STOPWORDS = new Set([
+  // articles / conjunctions / prepositions
   "a",
   "an",
   "the",
@@ -20,6 +21,54 @@ const STOPWORDS = new Set([
   "by",
   "from",
   "as",
+  "into",
+  "over",
+  "under",
+  "about",
+  "between",
+  "among",
+  "within",
+  "without",
+  "through",
+  "during",
+  "before",
+  "after",
+
+  // pronouns / determiners
+  "i",
+  "me",
+  "my",
+  "mine",
+  "you",
+  "your",
+  "yours",
+  "we",
+  "us",
+  "our",
+  "ours",
+  "they",
+  "them",
+  "their",
+  "theirs",
+  "he",
+  "him",
+  "his",
+  "she",
+  "her",
+  "hers",
+  "it",
+  "its",
+  "this",
+  "that",
+  "these",
+  "those",
+  "who",
+  "whom",
+  "whose",
+  "which",
+  "what",
+
+  // helpers / common verbs
   "is",
   "are",
   "was",
@@ -27,22 +76,44 @@ const STOPWORDS = new Set([
   "be",
   "been",
   "being",
-  "this",
-  "that",
-  "these",
-  "those",
-  "it",
-  "its",
-  "i",
-  "you",
-  "we",
-  "they",
-  "he",
-  "she",
-  "them",
-  "our",
-  "your",
-  "their",
+  "do",
+  "does",
+  "did",
+  "doing",
+  "have",
+  "has",
+  "had",
+  "having",
+  "will",
+  "would",
+  "can",
+  "could",
+  "shall",
+  "should",
+  "may",
+  "might",
+  "must",
+
+  // common filler words in JDs that should not be “keywords”
+  "able",
+  "ability",
+  "responsible",
+  "responsibilities",
+  "required",
+  "requirements",
+  "preferred",
+  "plus",
+  "nice",
+  "strong",
+  "excellent",
+  "good",
+  "great",
+  "experience",
+  "knowledge",
+  "skills",
+  "skill",
+  "team",
+  "teams",
 ]);
 
 function clean(s: string) {
@@ -54,6 +125,27 @@ function clean(s: string) {
     .toLowerCase();
 }
 
+function isStopLike(token: string) {
+  return STOPWORDS.has(token);
+}
+
+function isGarbageKeyword(kw: string) {
+  // block super-short or purely numeric junk
+  if (kw.length < 2) return true;
+
+  // block if it's entirely stopwords (for phrases like "is a")
+  const parts = kw.split(" ").filter(Boolean);
+  if (parts.length === 0) return true;
+
+  const nonStop = parts.filter((p) => !isStopLike(p));
+  if (nonStop.length === 0) return true;
+
+  // block phrases where the *meaningful* part is too short (e.g. "a i", "is a")
+  if (nonStop.join("").length < 3) return true;
+
+  return false;
+}
+
 export function normalizeText(s: string) {
   return clean(s);
 }
@@ -62,7 +154,6 @@ export function extractKeywordsBasic(text: string, max = 40): string[] {
   const t = clean(text);
   const tokens = t.split(" ").filter(Boolean);
 
-  // add simple 2-grams (e.g., "machine learning", "react js")
   const unigrams: string[] = [];
   for (const tok of tokens) {
     if (tok.length < 2) continue;
@@ -71,18 +162,24 @@ export function extractKeywordsBasic(text: string, max = 40): string[] {
   }
 
   const bigrams: string[] = [];
-  for (let i = 0; i < unigrams.length - 1; i++) {
-    const a = unigrams[i];
-    const b = unigrams[i + 1];
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const a = tokens[i];
+    const b = tokens[i + 1];
+    if (!a || !b) continue;
+
     const bg = `${a} ${b}`;
-    // avoid useless bigrams
-    if (STOPWORDS.has(a) || STOPWORDS.has(b)) continue;
+
+    // remove bigrams like "is a", "who is", "a the"
+    if (isGarbageKeyword(bg)) continue;
+
+    // keep bigrams only if they include at least one non-stop token already
+    // (this avoids "strong communication" being removed, because "communication" isn't a stopword)
     bigrams.push(bg);
   }
 
-  // frequency rank
   const freq = new Map<string, number>();
   for (const k of [...unigrams, ...bigrams]) {
+    if (isGarbageKeyword(k)) continue; // ✅ final guard
     freq.set(k, (freq.get(k) ?? 0) + 1);
   }
 
@@ -94,7 +191,9 @@ export function extractKeywordsBasic(text: string, max = 40): string[] {
 
 export function keywordDiff(resumeText: string, jdText: string) {
   const resumeNorm = clean(resumeText);
-  const jdKeywords = extractKeywordsBasic(jdText, 50);
+  const jdKeywords = extractKeywordsBasic(jdText, 50).filter(
+    (k) => !isGarbageKeyword(k)
+  );
 
   const present: string[] = [];
   const missing: string[] = [];

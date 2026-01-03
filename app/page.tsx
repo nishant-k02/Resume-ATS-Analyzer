@@ -8,11 +8,70 @@ import { Tabs } from "@/src/components/Tabs";
 import { ModificationCard } from "@/src/components/ModificationCard";
 import type { AnalyzeResponse } from "@/src/lib/schemas";
 
-type AcceptedMap = Record<string, boolean>;
+// type AcceptedMap = Record<string, boolean>;
 type Decision = "accepted" | "rejected" | null;
 
 function clamp(n: number) {
   return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+function escapeRegex(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizePunctuation(s: string) {
+  return s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, "-");
+}
+
+/**
+ * Try to replace originalText in resume with suggestedText.
+ * Returns { nextText, applied }.
+ */
+function applyOne(text: string, originalText: string, suggestedText: string) {
+  // 1) Exact replace-all
+  {
+    const escaped = escapeRegex(originalText);
+    const re = new RegExp(escaped, "g");
+    const next = text.replace(re, suggestedText);
+    if (next !== text) return { nextText: next, applied: true };
+  }
+
+  // 2) Whitespace-insensitive match:
+  // Turn "foo   bar\nbaz" into /foo\s+bar\s+baz/g
+  {
+    const tokens = originalText.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length >= 2) {
+      const pattern = tokens.map(escapeRegex).join("\\s+");
+      const re = new RegExp(pattern, "g");
+      const next = text.replace(re, suggestedText);
+      if (next !== text) return { nextText: next, applied: true };
+    }
+  }
+
+  // 3) Normalize punctuation (quotes/hyphens) + whitespace-insensitive
+  {
+    const normOrig = normalizePunctuation(originalText);
+    const normText = normalizePunctuation(text);
+
+    // We need to apply replacements to original text, not normalized only.
+    // So we re-run patterns on the ORIGINAL text but using a forgiving regex built from normOrig.
+    const tokens = normOrig.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length >= 2) {
+      const pattern = tokens.map(escapeRegex).join("\\s+");
+      const re = new RegExp(pattern, "g");
+      const next = text.replace(re, suggestedText);
+      if (next !== text) return { nextText: next, applied: true };
+    }
+
+    // As a last attempt: exact match on normalized (if text was normalized by extraction)
+    if (normText.includes(normOrig)) {
+      // Replace in normalized world, but apply naive fallback in original:
+      // safest: do nothing unless you want a riskier approach.
+      // We'll just mark as not applied.
+    }
+  }
+
+  return { nextText: text, applied: false };
 }
 
 export default function Home() {
@@ -27,27 +86,42 @@ export default function Home() {
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
 
   // accepted/rejected per suggestion id
-  const [accepted, setAccepted] = useState<AcceptedMap>({});
+  // const [accepted, setAccepted] = useState<AcceptedMap>({});
 
   // derived updated resume (apply accepted modifications as simple replacements)
   const updatedResume = useMemo(() => {
     if (!result) return resumeText;
+
     let text = resumeText;
 
     for (const mod of result.suggestions.modifications) {
-      if (accepted[mod.id]) {
-        // naive replacement: first occurrence
-        const idx = text.indexOf(mod.originalText);
-        if (idx >= 0) {
-          text =
-            text.slice(0, idx) +
-            mod.suggestedText +
-            text.slice(idx + mod.originalText.length);
-        }
+      if (decisions[mod.id] === "accepted") {
+        const out = applyOne(text, mod.originalText, mod.suggestedText);
+        text = out.nextText;
       }
     }
+
     return text;
-  }, [accepted, result, resumeText]);
+  }, [decisions, result, resumeText]);
+
+  const applyReport = useMemo(() => {
+    if (!result) return { applied: 0, failed: 0, failedIds: [] as string[] };
+
+    let text = resumeText;
+    let applied = 0;
+    const failedIds: string[] = [];
+
+    for (const mod of result.suggestions.modifications) {
+      if (decisions[mod.id] === "accepted") {
+        const out = applyOne(text, mod.originalText, mod.suggestedText);
+        text = out.nextText;
+        if (out.applied) applied += 1;
+        else failedIds.push(mod.id);
+      }
+    }
+
+    return { applied, failed: failedIds.length, failedIds };
+  }, [decisions, result, resumeText]);
 
   async function handleUpload(file: File) {
     const fd = new FormData();
@@ -67,7 +141,7 @@ export default function Home() {
   async function analyze() {
     setLoading(true);
     setResult(null);
-    setAccepted({});
+    // setAccepted({});
     setDecisions({});
 
     try {
@@ -168,7 +242,10 @@ export default function Home() {
                 <button
                   className="px-3 py-2 rounded-lg bg-indigo-600/20 border border-indigo-600/30 text-indigo-200 text-sm hover:bg-indigo-600/30"
                   onClick={() => setResumeText(updatedResume)}
-                  disabled={result.suggestions.modifications.length === 0}
+                  disabled={
+                    result.suggestions.modifications.length === 0 ||
+                    !Object.values(decisions).some((d) => d === "accepted")
+                  }
                 >
                   Regenerate My Resume (apply accepted)
                 </button>
@@ -188,11 +265,11 @@ export default function Home() {
                     // lock decision in parent state
                     setDecisions((prev) => ({ ...prev, [m.id]: d }));
 
-                    // accepted map is used for updatedResume generation
-                    setAccepted((prev) => ({
-                      ...prev,
-                      [m.id]: d === "accepted",
-                    }));
+                    // // accepted map is used for updatedResume generation
+                    // setAccepted((prev) => ({
+                    //   ...prev,
+                    //   [m.id]: d === "accepted",
+                    // }));
                   }}
                   isRegenerating={!!regenLoading[m.id]}
                   onRegen={() => regenOneSuggestion(m.id, "modification")}
@@ -445,6 +522,22 @@ export default function Home() {
           <div className="text-xs text-zinc-400 mb-2">
             Preview after applying accepted modifications
           </div>
+          {result && (
+            <div className="text-xs text-zinc-400 mb-3">
+              Applied:{" "}
+              <span className="text-zinc-200">{applyReport.applied}</span>{" "}
+              &nbsp;|&nbsp; Failed to apply:{" "}
+              <span className="text-zinc-200">{applyReport.failed}</span>
+              {applyReport.failed > 0 ? (
+                <div className="mt-2 text-amber-200">
+                  Some accepted changes could not be applied because the exact
+                  text was not found in your resume. (This can happen due to PDF
+                  formatting or edits after analysis.)
+                </div>
+              ) : null}
+            </div>
+          )}
+
           <pre className="text-sm text-zinc-200 whitespace-pre-wrap">
             {updatedResume}
           </pre>
@@ -475,7 +568,7 @@ export default function Home() {
               setResumeText("");
               setJobDescription("");
               setResult(null);
-              setAccepted({});
+              // setAccepted({});
               setDecisions({});
               setRegenLoading({});
             }}
