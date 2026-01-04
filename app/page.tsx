@@ -37,6 +37,17 @@ import type { AnalyzeResponse } from "@/src/lib/schemas";
 type AcceptedMap = Record<string, boolean>;
 type Decision = "accepted" | "rejected" | null;
 
+async function safeJson(res: Response) {
+  const text = await res.text(); // read once
+  if (!text) return { __empty: true };
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { __nonJson: true, raw: text.slice(0, 500) };
+  }
+}
+
 function clamp(n: number) {
   return Math.max(0, Math.min(100, Math.round(n)));
 }
@@ -80,10 +91,15 @@ export default function Home() {
     fd.append("file", file);
 
     const res = await fetch("/api/upload", { method: "POST", body: fd });
-    const data = await res.json();
+    const data = await safeJson(res);
 
     if (!res.ok) {
-      alert(data?.error ?? "Upload failed");
+      alert(
+        (data as any)?.error ??
+          `Upload failed (${res.status}). ${
+            (data as any)?.__nonJson ? "Server returned non-JSON." : ""
+          }`
+      );
       return;
     }
 
@@ -102,9 +118,17 @@ export default function Home() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ resumeText, jobDescription }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? "Analyze failed");
-      setResult(data);
+      const data = await safeJson(res);
+      if (!res.ok) {
+        // show raw server output if it's not JSON (super helpful on Amplify)
+        const fallback = (data as any)?.__nonJson
+          ? `Server returned non-JSON: ${(data as any)?.raw}`
+          : (data as any)?.error;
+
+        throw new Error(fallback ?? `Analyze failed (${res.status})`);
+      }
+
+      setResult(data as any);
       setDecisions(() => {
         const next: Record<string, Decision> = {};
         for (const m of data.suggestions.modifications) next[m.id] = null;
@@ -707,7 +731,7 @@ export default function Home() {
           </motion.div>
         )}
       </div>
-      
+
       {/* Footer */}
       <Footer />
     </div>
