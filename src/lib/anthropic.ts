@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { loadEnvIfNeeded } from "./loadEnv";
 
-loadEnvIfNeeded();
+await loadEnvIfNeeded();
 
 export function getAnthropicClient() {
   const apiKey = process.env.ANTHROPIC_API_KEY;
