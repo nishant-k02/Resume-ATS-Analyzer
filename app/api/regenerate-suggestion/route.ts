@@ -7,6 +7,7 @@ import {
 } from "@/src/lib/schemas";
 
 export const runtime = "nodejs";
+export const maxDuration = 60; // 60 seconds for AWS Amplify
 
 const ReqSchema = z.object({
   resumeText: z.string().min(1),
