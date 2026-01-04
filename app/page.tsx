@@ -69,6 +69,7 @@ export default function Home() {
   const [resumeText, setResumeText] = useState("");
   const [jobDescription, setJobDescription] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("Analyzing...");
   const [activeTab, setActiveTab] = useState("modifications");
   const [regenLoading, setRegenLoading] = useState<Record<string, boolean>>({});
 
@@ -124,47 +125,127 @@ export default function Home() {
     setResumeText(data.text || "");
   }
 
-  async function analyze() {
+  async function analyzeWithRetry(maxRetries = 2) {
     setLoading(true);
+    setLoadingMessage("Analyzing...");
     setResult(null);
     setAccepted({});
     setDecisions({});
 
-    try {
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ resumeText, jobDescription }),
-      });
-      const data = await safeJson(res);
-      if (!res.ok) {
-        // show raw server output if it's not JSON (super helpful on Amplify)
-        if (isNonJsonResponse(data)) {
-          throw new Error(`Server returned non-JSON: ${data.raw}`);
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 0) {
+          setLoadingMessage(`Retrying... (attempt ${attempt + 1}/${maxRetries + 1})`);
+        } else {
+          setLoadingMessage("Analyzing your resume...");
         }
-        const errorMessage = "error" in data ? data.error : undefined;
-        throw new Error(errorMessage || `Analyze failed (${res.status})`);
-      }
 
-      if (isEmptyResponse(data) || isNonJsonResponse(data)) {
-        throw new Error("Invalid response from server.");
-      }
+        // Create AbortController for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 55000); // 55 seconds timeout
 
-      const responseData = data as AnalyzeResponse;
-      setResult(responseData);
-      setDecisions(() => {
-        const next: Record<string, Decision> = {};
-        for (const m of responseData.suggestions.modifications) next[m.id] = null;
-        return next;
-      });
+        try {
+          const res = await fetch("/api/analyze", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ resumeText, jobDescription }),
+            signal: controller.signal,
+          });
 
-      setActiveTab("modifications");
-    } catch (e: unknown) {
-      if (e instanceof Error) {
-        alert(e.message ?? "Analyze failed");
-      } else {
-        alert(String(e) || "Analyze failed");
+          clearTimeout(timeoutId);
+
+          const data = await safeJson(res);
+          
+          if (!res.ok) {
+            // Handle 504 Gateway Timeout specifically
+            if (res.status === 504) {
+              if (attempt < maxRetries) {
+                const waitTime = Math.min(1000 * Math.pow(2, attempt), 5000); // Exponential backoff, max 5s
+                setLoadingMessage(`Request timed out. Retrying in ${Math.ceil(waitTime / 1000)}s...`);
+                console.log(`Request timed out. Retrying in ${waitTime}ms... (attempt ${attempt + 1}/${maxRetries + 1})`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+                continue;
+              }
+              throw new Error("The analysis is taking longer than expected. Please try again with shorter text or wait a moment and retry.");
+            }
+
+            // show raw server output if it's not JSON (super helpful on Amplify)
+            if (isNonJsonResponse(data)) {
+              throw new Error(`Server returned non-JSON: ${data.raw}`);
+            }
+            const errorMessage = "error" in data ? data.error : undefined;
+            throw new Error(errorMessage || `Analyze failed (${res.status})`);
+          }
+
+          if (isEmptyResponse(data) || isNonJsonResponse(data)) {
+            throw new Error("Invalid response from server.");
+          }
+
+          const responseData = data as AnalyzeResponse;
+          setResult(responseData);
+          setDecisions(() => {
+            const next: Record<string, Decision> = {};
+            for (const m of responseData.suggestions.modifications) next[m.id] = null;
+            return next;
+          });
+
+          setActiveTab("modifications");
+          setLoadingMessage("Analysis complete!");
+          return; // Success, exit retry loop
+        } catch (fetchError: unknown) {
+          clearTimeout(timeoutId);
+          
+          if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+            if (attempt < maxRetries) {
+              const waitTime = Math.min(1000 * Math.pow(2, attempt), 5000);
+              setLoadingMessage(`Request timed out. Retrying in ${Math.ceil(waitTime / 1000)}s...`);
+              console.log(`Request timed out. Retrying in ${waitTime}ms... (attempt ${attempt + 1}/${maxRetries + 1})`);
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+              continue;
+            }
+            throw new Error("Request timed out after 55 seconds. The analysis is taking longer than expected. Please try again with shorter text.");
+          }
+          throw fetchError;
+        }
+      } catch (e: unknown) {
+        lastError = e instanceof Error ? e : new Error(String(e));
+        
+        // Don't retry on certain errors
+        if (e instanceof Error && (
+          e.message.includes("Invalid request") ||
+          e.message.includes("Input too large") ||
+          e.message.includes("Invalid response")
+        )) {
+          break; // Don't retry validation errors
+        }
+
+        // If this is the last attempt, throw the error
+        if (attempt === maxRetries) {
+          break;
+        }
+
+        // Wait before retrying (exponential backoff)
+        const waitTime = Math.min(1000 * Math.pow(2, attempt), 5000);
+        setLoadingMessage(`Error occurred. Retrying in ${Math.ceil(waitTime / 1000)}s...`);
+        console.log(`Error occurred. Retrying in ${waitTime}ms... (attempt ${attempt + 1}/${maxRetries + 1})`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
       }
+    }
+
+    // If we get here, all retries failed
+    if (lastError) {
+      const errorMessage = lastError.message || "Analyze failed. Please try again.";
+      alert(errorMessage);
+    } else {
+      alert("Analyze failed. Please try again.");
+    }
+  }
+
+  async function analyze() {
+    try {
+      await analyzeWithRetry(2);
     } finally {
       setLoading(false);
     }
@@ -684,7 +765,7 @@ export default function Home() {
             {loading ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Analyzing...</span>
+                <span>{loadingMessage}</span>
               </>
             ) : (
               <>
