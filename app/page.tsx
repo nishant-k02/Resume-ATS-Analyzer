@@ -37,12 +37,25 @@ import type { AnalyzeResponse } from "@/src/lib/schemas";
 type AcceptedMap = Record<string, boolean>;
 type Decision = "accepted" | "rejected" | null;
 
-async function safeJson(res: Response) {
+type SafeJsonResponse =
+  | { __empty: true }
+  | { __nonJson: true; raw: string }
+  | ({ error?: string; text?: string } & Record<string, unknown>);
+
+function isNonJsonResponse(data: SafeJsonResponse): data is { __nonJson: true; raw: string } {
+  return "__nonJson" in data && data.__nonJson === true;
+}
+
+function isEmptyResponse(data: SafeJsonResponse): data is { __empty: true } {
+  return "__empty" in data && data.__empty === true;
+}
+
+async function safeJson(res: Response): Promise<SafeJsonResponse> {
   const text = await res.text(); // read once
   if (!text) return { __empty: true };
 
   try {
-    return JSON.parse(text);
+    return JSON.parse(text) as SafeJsonResponse;
   } catch {
     return { __nonJson: true, raw: text.slice(0, 500) };
   }
@@ -94,12 +107,17 @@ export default function Home() {
     const data = await safeJson(res);
 
     if (!res.ok) {
-      alert(
-        (data as any)?.error ??
-          `Upload failed (${res.status}). ${
-            (data as any)?.__nonJson ? "Server returned non-JSON." : ""
-          }`
-      );
+      if (isNonJsonResponse(data)) {
+        alert(`Upload failed (${res.status}). Server returned non-JSON: ${data.raw}`);
+      } else {
+        const errorMessage = "error" in data ? data.error : undefined;
+        alert(errorMessage || `Upload failed (${res.status}).`);
+      }
+      return;
+    }
+
+    if (isEmptyResponse(data) || isNonJsonResponse(data)) {
+      alert("Upload failed: Invalid response from server.");
       return;
     }
 
@@ -121,17 +139,22 @@ export default function Home() {
       const data = await safeJson(res);
       if (!res.ok) {
         // show raw server output if it's not JSON (super helpful on Amplify)
-        const fallback = (data as any)?.__nonJson
-          ? `Server returned non-JSON: ${(data as any)?.raw}`
-          : (data as any)?.error;
-
-        throw new Error(fallback ?? `Analyze failed (${res.status})`);
+        if (isNonJsonResponse(data)) {
+          throw new Error(`Server returned non-JSON: ${data.raw}`);
+        }
+        const errorMessage = "error" in data ? data.error : undefined;
+        throw new Error(errorMessage || `Analyze failed (${res.status})`);
       }
 
-      setResult(data as any);
+      if (isEmptyResponse(data) || isNonJsonResponse(data)) {
+        throw new Error("Invalid response from server.");
+      }
+
+      const responseData = data as AnalyzeResponse;
+      setResult(responseData);
       setDecisions(() => {
         const next: Record<string, Decision> = {};
-        for (const m of data.suggestions.modifications) next[m.id] = null;
+        for (const m of responseData.suggestions.modifications) next[m.id] = null;
         return next;
       });
 
