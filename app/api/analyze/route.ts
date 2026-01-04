@@ -7,15 +7,18 @@ import { getGroundedMatchBreakdown } from "@/src/lib/claudeMatch";
 import { computeAtsScoreFromBreakdown } from "@/src/lib/text";
 
 export const runtime = "nodejs";
+export const maxDuration = 60; // 60 seconds for AWS Amplify
 
 function isDev() {
   return process.env.NODE_ENV !== "production";
 }
 
-// simple guard (characters); we’ll do token estimation later
+// simple guard (characters); we'll do token estimation later
 const MAX_CHARS = 60_000;
 
 export async function POST(req: Request) {
+  const startTime = Date.now();
+  
   try {
     const body = await req.json();
     const { resumeText, jobDescription } = AnalyzeRequestSchema.parse(body);
@@ -37,10 +40,12 @@ export async function POST(req: Request) {
     );
 
     // 2) LLM-grounded requirement match (more accurate)
+    console.log(`[ANALYZE] Starting breakdown analysis (${Date.now() - startTime}ms)`);
     const breakdown = await getGroundedMatchBreakdown({
       resumeText,
       jobDescription,
     });
+    console.log(`[ANALYZE] Breakdown complete (${Date.now() - startTime}ms)`);
 
     // 3) Final match percentage from grounded score
     const matchPercentage = Math.round(breakdown.weightedMatch);
@@ -52,7 +57,9 @@ export async function POST(req: Request) {
     );
 
     // 5) Suggestions (keep your existing)
+    console.log(`[ANALYZE] Starting suggestions (${Date.now() - startTime}ms)`);
     const suggestions = await generateSuggestions(resumeText, jobDescription);
+    console.log(`[ANALYZE] Suggestions complete (${Date.now() - startTime}ms)`);
 
     const response = AnalyzeResponseSchema.parse({
       matchPercentage,
@@ -63,9 +70,21 @@ export async function POST(req: Request) {
       breakdown,
     });
 
+    console.log(`[ANALYZE] Total time: ${Date.now() - startTime}ms`);
     return NextResponse.json(response);
   } catch (e: unknown) {
-    console.error("ANALYZE_ROUTE_ERROR:", e);
+    const elapsed = Date.now() - startTime;
+    console.error(`[ANALYZE_ROUTE_ERROR] (${elapsed}ms):`, e);
+    
+    // Check if it's a timeout error
+    if (e instanceof Error && (e.message.includes('timeout') || e.message.includes('504'))) {
+      return NextResponse.json(
+        {
+          error: "Request timed out. The analysis is taking longer than expected. Please try again with shorter text or contact support.",
+        },
+        { status: 504 }
+      );
+    }
 
     if (e instanceof z.ZodError) {
       return NextResponse.json(
