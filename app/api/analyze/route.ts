@@ -9,6 +9,15 @@ import { computeAtsScoreFromBreakdown } from "@/src/lib/text";
 export const runtime = "nodejs";
 export const maxDuration = 60; // 60 seconds for AWS Amplify
 
+// Helper to check if we're close to timeout
+function checkTimeout(startTime: number, maxDurationMs: number): void {
+  const elapsed = Date.now() - startTime;
+  const remaining = maxDurationMs - elapsed;
+  if (remaining < 5000) { // Less than 5 seconds remaining
+    throw new Error("Request is approaching timeout. Please try with shorter text.");
+  }
+}
+
 function isDev() {
   return process.env.NODE_ENV !== "production";
 }
@@ -41,6 +50,7 @@ export async function POST(req: Request) {
 
     // 2) LLM-grounded requirement match (more accurate)
     console.log(`[ANALYZE] Starting breakdown analysis (${Date.now() - startTime}ms)`);
+    checkTimeout(startTime, 55000); // Check before long operation
     const breakdown = await getGroundedMatchBreakdown({
       resumeText,
       jobDescription,
@@ -58,6 +68,7 @@ export async function POST(req: Request) {
 
     // 5) Suggestions (keep your existing)
     console.log(`[ANALYZE] Starting suggestions (${Date.now() - startTime}ms)`);
+    checkTimeout(startTime, 55000); // Check before long operation
     const suggestions = await generateSuggestions(resumeText, jobDescription);
     console.log(`[ANALYZE] Suggestions complete (${Date.now() - startTime}ms)`);
 
