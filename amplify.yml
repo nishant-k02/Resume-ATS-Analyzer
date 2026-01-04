@@ -5,8 +5,9 @@ applications:
       phases:
         preBuild:
           commands:
-            - corepack enable
             - pnpm install --frozen-lockfile
+            - echo "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" >> .env.production
+            - echo "ANTHROPIC_MODEL=$ANTHROPIC_MODEL" >> .env.production
         build:
           commands:
             - pnpm build
